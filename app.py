@@ -234,7 +234,7 @@ st.session_state.vencimientos = [
 ]
 
 # ---------------------------------------------------------
-# 3. EXPORTADOR MULTI-PESTAÑA (EXACTAMENTE RUTAS ML3E51, ML3E52, ML3E53)
+# 3. EXPORTADOR MULTI-PESTAÑA SEGURO
 # ---------------------------------------------------------
 def exportar_excel_multiruta(rutas_dict, fecha_str):
     wb = Workbook()
@@ -426,14 +426,14 @@ with tab2:
             st.session_state.catalogo.pop(idx)
             st.rerun()
 
-# --- TAB 3: EXTRACCIÓN FILTRADA EXCLUSIVAMENTE PARA ML3E51, ML3E52 Y ML3E53 ---
+# --- TAB 3: EXTRACCIÓN FLEXIBLE Y TOTALIZADA DE RUTAS (ML3E51, ML3E52, ML3E53) ---
 with tab3:
-    st.markdown('<p class="sub-title">📄 Extracción de Rutas (ML3E51, ML3E52, ML3E53)</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">📄 Extracción Completa de Rutas (ML3E51, ML3E52, ML3E53)</p>', unsafe_allow_html=True)
     
     uploaded_file = st.file_uploader("Cargar documento PDF con las planillas:", type=["pdf"])
     
     if uploaded_file:
-        rutas_crudas = {}
+        rutas_crudas = {"ML3E51": [], "ML3E52": [], "ML3E53": []}
         ruta_actual = None
         fecha_detectada = date.today().strftime('%d.%m.%Y')
         
@@ -456,23 +456,17 @@ with tab3:
                         if match_f:
                             fecha_detectada = match_f.group(1)
                             
-                    # Detectar estrictamente ML3E51, ML3E52 o ML3E53 (o abreviados como 51, 52, 53 bajo ese contexto)
-                    match_r = re.search(r'\b(ML3E5[1-3]|5[1-3])\b', line_upper)
-                    if match_r and any(kw in line_upper for kw in ["RUTA", "CARGA", "CARGUE", "ML3E"]):
-                        r_code = match_r.group(1)
-                        if r_code in ["51", "ML3E51"]:
-                            ruta_actual = "ML3E51"
-                        elif r_code in ["52", "ML3E52"]:
-                            ruta_actual = "ML3E52"
-                        elif r_code in ["53", "ML3E53"]:
-                            ruta_actual = "ML3E53"
+                    # Detectar cambio de ruta activa de manera flexible
+                    if "ML3E51" in line_upper or " RUTA 51" in line_upper or " 51" in line_upper and "RUTA" in line_upper:
+                        ruta_actual = "ML3E51"
+                    elif "ML3E52" in line_upper or " RUTA 52" in line_upper or " 52" in line_upper and "RUTA" in line_upper:
+                        ruta_actual = "ML3E52"
+                    elif "ML3E53" in line_upper or " RUTA 53" in line_upper or " 53" in line_upper and "RUTA" in line_upper:
+                        ruta_actual = "ML3E53"
                         
-                        if ruta_actual and ruta_actual not in rutas_crudas:
-                            rutas_crudas[ruta_actual] = []
-                        
-                    # Detección de ítems solo si estamos dentro de una de las 3 rutas válidas
                     if ruta_actual:
-                        match_slash = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*/\s*(\d+)\s*$', line_clean)
+                        # Patrón 1: Cantidad con Slash (ej. 135718 COCA COLA 10/5)
+                        match_slash = re.search(r'^(\d{5,6})\s+(.+?)\s+(\d+)\s*/\s*(\d+)\s*$', line_clean)
                         if match_slash:
                             rutas_crudas[ruta_actual].append({
                                 "SKU (Material)": match_slash.group(1),
@@ -482,7 +476,8 @@ with tab3:
                             })
                             continue
 
-                        match_dos_num = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s+(\d+)\s*$', line_clean)
+                        # Patrón 2: Cantidad con dos números separados por espacio
+                        match_dos_num = re.search(r'^(\d{5,6})\s+(.+?)\s+(\d+)\s+(\d+)\s*$', line_clean)
                         if match_dos_num:
                             rutas_crudas[ruta_actual].append({
                                 "SKU (Material)": match_dos_num.group(1),
@@ -492,7 +487,8 @@ with tab3:
                             })
                             continue
 
-                        match_un_num = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*$', line_clean)
+                        # Patrón 3: Cantidad con un solo número (solo cajas)
+                        match_un_num = re.search(r'^(\d{5,6})\s+(.+?)\s+(\d+)\s*$', line_clean)
                         if match_un_num:
                             rutas_crudas[ruta_actual].append({
                                 "SKU (Material)": match_un_num.group(1),
@@ -500,11 +496,25 @@ with tab3:
                                 "Cajas": int(match_un_num.group(3)),
                                 "Unidades": 0
                             })
+                            continue
 
+                        # Patrón Flexible General por si el texto viene más abierto en bordes de página
+                        match_flexible = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)(?:\s*/\s*(\d+))?\s*$', line_clean)
+                        if match_flexible and not any(d['SKU (Material)'] == match_flexible.group(1) for d in rutas_crudas[ruta_actual]):
+                            cajas = int(match_flexible.group(3))
+                            unidades = int(match_flexible.group(4)) if match_flexible.group(4) else 0
+                            rutas_crudas[ruta_actual].append({
+                                "SKU (Material)": match_flexible.group(1),
+                                "Descripción del Producto": match_flexible.group(2).strip(),
+                                "Cajas": cajas,
+                                "Unidades": unidades
+                            })
+
+        # Filtrar solo las rutas que contengan productos extraídos
         rutas_crudas = {k: v for k, v in rutas_crudas.items() if len(v) > 0}
 
         if rutas_crudas:
-            st.success(f"✅ Se identificaron y procesaron {len(rutas_crudas)} ruta(s) objetivo (ML3E51, ML3E52, ML3E53).")
+            st.success(f"✅ Se capturaron exitosamente los productos de {len(rutas_crudas)} ruta(s) sin exclusiones.")
             
             excel_dict = {}
             
@@ -551,4 +561,4 @@ with tab3:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
         else:
-            st.warning("⚠️ No se encontraron planillas correspondientes a las rutas ML3E51, ML3E52 o ML3E53 en el PDF cargado.")
+            st.warning("⚠️ No se lograron extraer los productos completos. Revisa si el documento PDF contiene el texto de las planillas en formato digital legible.")
