@@ -426,18 +426,17 @@ with tab2:
             st.session_state.catalogo.pop(idx)
             st.rerun()
 
-# --- TAB 3: EXTRACCIÓN FLEXIBLE Y TOTALIZADA DE RUTAS (ML3E51, ML3E52, ML3E53) ---
+# --- TAB 3: LECTURA EXACTA DESDE "MATERIAL" HASTA "SUBTOTAL FAMILIA" ---
 with tab3:
-    st.markdown('<p class="sub-title">📄 Extracción Completa de Rutas (ML3E51, ML3E52, ML3E53)</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">📄 Extracción Exacta por Ruta (ML3E51, ML3E52, ML3E53)</p>', unsafe_allow_html=True)
     
     uploaded_file = st.file_uploader("Cargar documento PDF con las planillas:", type=["pdf"])
     
     if uploaded_file:
         rutas_crudas = {"ML3E51": [], "ML3E52": [], "ML3E53": []}
         ruta_actual = None
+        capturando_productos = False
         fecha_detectada = date.today().strftime('%d.%m.%Y')
-        
-        palabras_ignorar = ['REPARTIDOR', 'USUARIO', 'ESTATUS', 'TRANSPORTE', 'CAMION', 'CAMIÓN', 'ENTREGAS']
         
         with pdfplumber.open(uploaded_file) as pdf:
             for page in pdf.pages:
@@ -448,73 +447,64 @@ with tab3:
                     line_clean = line.strip()
                     line_upper = line_clean.upper()
                     
-                    if any(p in line_upper for p in palabras_ignorar):
-                        continue
-                        
+                    # 1. Detectar Fecha
                     if "FECHA" in line_upper:
                         match_f = re.search(r'(\d{2}[/.-]\d{2}[/.-]\d{4}|\d{4}[/.-]\d{2}[/.-]\d{2})', line_clean)
                         if match_f:
                             fecha_detectada = match_f.group(1)
                             
-                    # Detectar cambio de ruta activa de manera flexible
-                    if "ML3E51" in line_upper or " RUTA 51" in line_upper or " 51" in line_upper and "RUTA" in line_upper:
+                    # 2. Detectar cuál de las 3 rutas estamos leyendo
+                    if "ML3E51" in line_upper:
                         ruta_actual = "ML3E51"
-                    elif "ML3E52" in line_upper or " RUTA 52" in line_upper or " 52" in line_upper and "RUTA" in line_upper:
+                        capturando_productos = False
+                    elif "ML3E52" in line_upper:
                         ruta_actual = "ML3E52"
-                    elif "ML3E53" in line_upper or " RUTA 53" in line_upper or " 53" in line_upper and "RUTA" in line_upper:
+                        capturando_productos = False
+                    elif "ML3E53" in line_upper:
                         ruta_actual = "ML3E53"
+                        capturando_productos = False
                         
-                    if ruta_actual:
-                        # Patrón 1: Cantidad con Slash (ej. 135718 COCA COLA 10/5)
-                        match_slash = re.search(r'^(\d{5,6})\s+(.+?)\s+(\d+)\s*/\s*(\d+)\s*$', line_clean)
-                        if match_slash:
-                            rutas_crudas[ruta_actual].append({
-                                "SKU (Material)": match_slash.group(1),
-                                "Descripción del Producto": match_slash.group(2).strip(),
-                                "Cajas": int(match_slash.group(3)),
-                                "Unidades": int(match_slash.group(4))
-                            })
-                            continue
+                    # 3. Activar captura justo cuando aparece la palabra "MATERIAL" (cabecera de tabla)
+                    if "MATERIAL" in line_upper:
+                        capturando_productos = True
+                        continue
+                        
+                    # 4. Detener captura al llegar a "SUBTOTAL FAMILIA"
+                    if "SUBTOTAL" in line_upper or "TOTAL FAMILIA" in line_upper:
+                        capturando_productos = False
+                        continue
+                        
+                    # 5. Extraer productos línea por línea mientras esté activo el bloque de la ruta
+                    if ruta_actual and capturando_productos:
+                        # Patrón para capturar SKU, Descripción y cantidades (con slash o espacios)
+                        match_prod = re.search(r'^(\d{5,6})\s+(.+?)\s+(\d+)\s*(?:/\s*(\d+)|\s+(\d+))?\s*$', line_clean)
+                        if match_prod:
+                            sku = match_prod.group(1)
+                            desc = match_prod.group(2).strip()
+                            cajas = int(match_prod.group(3))
+                            
+                            # Si tiene botellas por slash o segundo número
+                            if match_prod.group(4):
+                                unidades = int(match_prod.group(4))
+                            elif match_prod.group(5):
+                                unidades = int(match_prod.group(5))
+                            else:
+                                unidades = 0
+                                
+                            # Evitar duplicados exactos en la misma ruta
+                            if not any(d['SKU (Material)'] == sku for d in rutas_crudas[ruta_actual]):
+                                rutas_crudas[ruta_actual].append({
+                                    "SKU (Material)": sku,
+                                    "Descripción del Producto": desc,
+                                    "Cajas": cajas,
+                                    "Unidades": unidades
+                                })
 
-                        # Patrón 2: Cantidad con dos números separados por espacio
-                        match_dos_num = re.search(r'^(\d{5,6})\s+(.+?)\s+(\d+)\s+(\d+)\s*$', line_clean)
-                        if match_dos_num:
-                            rutas_crudas[ruta_actual].append({
-                                "SKU (Material)": match_dos_num.group(1),
-                                "Descripción del Producto": match_dos_num.group(2).strip(),
-                                "Cajas": int(match_dos_num.group(3)),
-                                "Unidades": int(match_dos_num.group(4))
-                            })
-                            continue
-
-                        # Patrón 3: Cantidad con un solo número (solo cajas)
-                        match_un_num = re.search(r'^(\d{5,6})\s+(.+?)\s+(\d+)\s*$', line_clean)
-                        if match_un_num:
-                            rutas_crudas[ruta_actual].append({
-                                "SKU (Material)": match_un_num.group(1),
-                                "Descripción del Producto": match_un_num.group(2).strip(),
-                                "Cajas": int(match_un_num.group(3)),
-                                "Unidades": 0
-                            })
-                            continue
-
-                        # Patrón Flexible General por si el texto viene más abierto en bordes de página
-                        match_flexible = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)(?:\s*/\s*(\d+))?\s*$', line_clean)
-                        if match_flexible and not any(d['SKU (Material)'] == match_flexible.group(1) for d in rutas_crudas[ruta_actual]):
-                            cajas = int(match_flexible.group(3))
-                            unidades = int(match_flexible.group(4)) if match_flexible.group(4) else 0
-                            rutas_crudas[ruta_actual].append({
-                                "SKU (Material)": match_flexible.group(1),
-                                "Descripción del Producto": match_flexible.group(2).strip(),
-                                "Cajas": cajas,
-                                "Unidades": unidades
-                            })
-
-        # Filtrar solo las rutas que contengan productos extraídos
+        # Filtrar solo las rutas que contengan elementos extraídos
         rutas_crudas = {k: v for k, v in rutas_crudas.items() if len(v) > 0}
 
         if rutas_crudas:
-            st.success(f"✅ Se capturaron exitosamente los productos de {len(rutas_crudas)} ruta(s) sin exclusiones.")
+            st.success(f"✅ Se leyeron y completaron los productos de {len(rutas_crudas)} ruta(s) sin dejar ninguno fuera.")
             
             excel_dict = {}
             
@@ -542,7 +532,7 @@ with tab3:
                     
                     excel_dict[nombre_ruta] = df_final
                     
-                    st.markdown(f"### 🚚 Ruta: {nombre_ruta}")
+                    st.markdown(f"### 🚚 Ruta: {nombre_ruta} ({len(items)} productos extraídos)")
                     
                     m1, m2 = st.columns(2)
                     m1.metric("📦 Total Cajas Calculadas", f"{sum_cajas:,}")
@@ -561,4 +551,4 @@ with tab3:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
         else:
-            st.warning("⚠️ No se lograron extraer los productos completos. Revisa si el documento PDF contiene el texto de las planillas en formato digital legible.")
+            st.warning("⚠️ No se detectaron las tablas de productos bajo las palabras clave 'Material' y 'Subtotal familia'. Verifica el PDF.")
