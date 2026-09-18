@@ -9,41 +9,73 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 # ---------------------------------------------------------
-# 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS
+# 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS RESPONSIVOS
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Inesco | Gestión y Extracción",
-    page_icon="🥤",
-    layout="wide"
+    page_icon="🚛",
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
 st.markdown("""
     <style>
     .cocacola-header {
-        background-color: #E41E2B;
-        padding: 18px;
-        border-radius: 12px;
+        background: linear-gradient(135deg, #E41E2B 0%, #B3000C 100%);
+        padding: 20px;
+        border-radius: 15px;
         text-align: center;
         color: white;
         margin-bottom: 20px;
-        box-shadow: 0px 4px 10px rgba(228, 30, 43, 0.3);
+        box-shadow: 0px 6px 15px rgba(228, 30, 43, 0.4);
     }
-    .cocacola-header h1 { color: white !important; margin: 0; font-weight: 800; font-size: 1.8rem; }
-    .cocacola-header p { color: #FFEBEE !important; margin: 3px 0 0 0; font-size: 0.9rem; }
+    .cocacola-header .logo-truck {
+        font-size: 2.8rem;
+        margin-bottom: 5px;
+        display: inline-block;
+    }
+    .cocacola-header h1 { 
+        color: white !important; 
+        margin: 0; 
+        font-weight: 800; 
+        font-size: 1.8rem;
+        letter-spacing: 1px;
+    }
+    .cocacola-header p { 
+        color: #FFEBEE !important; 
+        margin: 5px 0 0 0; 
+        font-size: 0.95rem; 
+    }
     .sub-title {
-        color: #E41E2B; font-weight: 700; font-size: 1.2rem;
-        margin-top: 15px; margin-bottom: 10px;
-        border-bottom: 2px solid #E41E2B; padding-bottom: 5px;
+        color: #E41E2B; 
+        font-weight: 700; 
+        font-size: 1.2rem;
+        margin-top: 15px; 
+        margin-bottom: 10px;
+        border-bottom: 2px solid #E41E2B; 
+        padding-bottom: 5px;
     }
     .stButton>button {
-        background-color: #E41E2B !important; color: white !important;
-        font-weight: bold !important; border-radius: 8px !important; width: 100%;
+        background-color: #E41E2B !important; 
+        color: white !important;
+        font-weight: bold !important; 
+        border-radius: 8px !important; 
+        width: 100%;
+        padding: 10px 0px;
+    }
+    /* Estilos adaptativos para móviles */
+    @media (max-width: 640px) {
+        .cocacola-header h1 { font-size: 1.4rem; }
+        .cocacola-header .logo-truck { font-size: 2rem; }
+        .cocacola-header p { font-size: 0.8rem; }
     }
     </style>
 """, unsafe_allow_html=True)
 
+# Encabezado principal con Logo / Ícono alusivo
 st.markdown("""
     <div class="cocacola-header">
+        <div class="logo-truck">🚛 🥤</div>
         <h1>DISTRIBUCIONES INESCO</h1>
         <p>Gestión de Inventario, Vencimientos y Extracción por Rutas</p>
     </div>
@@ -205,12 +237,12 @@ st.session_state.vencimientos = [
 ]
 
 # ---------------------------------------------------------
-# 3. FUNCIÓN GENERADORA DE EXCEL (CON TOTALES DESTACADOS)
+# 3. GENERADOR DE EXCEL
 # ---------------------------------------------------------
-def exportar_excel_inesco(df, subtitulo, titulo_hoja="Hoja1"):
+def exportar_excel_inesco(df, nombre_ruta):
     wb = Workbook()
     ws = wb.active
-    ws.title = titulo_hoja[:30].replace(":", "").replace("/", "").replace("\\", "")
+    ws.title = nombre_ruta.replace(" ", "_")[:30]
     
     # Estilos
     blue_title_font = Font(color="003366", bold=True, size=14, name="Calibri")
@@ -235,7 +267,8 @@ def exportar_excel_inesco(df, subtitulo, titulo_hoja="Hoja1"):
     cell_t.font = blue_title_font
     cell_t.alignment = Alignment(horizontal="center", vertical="center")
     
-    # Fila 2: Subtítulo
+    # Fila 2: Subtítulo con Nombre de Ruta y Fecha
+    subtitulo = f"Reporte de Planilla: {nombre_ruta} — Fecha: {date.today().strftime('%d/%m/%Y')}"
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max(num_cols, 3))
     cell_s = ws.cell(row=2, column=1, value=subtitulo)
     cell_s.font = sub_font
@@ -264,12 +297,12 @@ def exportar_excel_inesco(df, subtitulo, titulo_hoja="Hoja1"):
                 c.fill = total_fill
                 c.font = total_font
             
-            if col_idx in [1, 3, 4]:  # SKU, Cajas, Unidades
+            if col_idx in [1, 3, 4]:
                 c.alignment = Alignment(horizontal="center", vertical="center")
             else:
                 c.alignment = Alignment(horizontal="left", vertical="center")
                 
-    # Auto-ajustar ancho de columnas
+    # Auto-ajuste de columnas
     for col_idx in range(1, num_cols + 1):
         col_letter = get_column_letter(col_idx)
         max_len = 0
@@ -286,7 +319,7 @@ def exportar_excel_inesco(df, subtitulo, titulo_hoja="Hoja1"):
 # ---------------------------------------------------------
 # 4. PESTAÑAS Y NAVEGACIÓN
 # ---------------------------------------------------------
-tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF (Rutas 51, 52, 53)"])
+tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF (Rutas)"])
 
 # --- TAB 1: FECHAS DE VENCIMIENTO ---
 with tab1:
@@ -296,7 +329,7 @@ with tab1:
     
     c1, c2 = st.columns([2, 1])
     with c1:
-        sel_sku = st.selectbox("Seleccionar Producto:", options=skus_opt, index=None, placeholder="🔎 Escribe aquí SKU o Nombre...")
+        sel_sku = st.selectbox("Seleccionar Producto:", options=skus_opt, index=None, placeholder="🔎 Buscar SKU o Nombre...")
     with c2:
         f_venc = st.date_input("Fecha de Vencimiento:", value=date.today())
         
@@ -304,14 +337,13 @@ with tab1:
         if sel_sku:
             s_code, s_desc = sel_sku.split(" - ", 1)
             
-            # CONTROL DE DUPLICADOS: Verificar si el SKU ya existe
+            # Control de duplicados
             existe_idx = next((i for i, r in enumerate(st.session_state.vencimientos) if r["SKU"] == s_code), None)
             
             if existe_idx is not None:
-                # Si ya existe, actualiza la fecha en lugar de duplicar la fila
                 st.session_state.vencimientos[existe_idx]["Fecha Vencimiento"] = f_venc.strftime("%d/%m/%Y")
                 st.session_state.vencimientos[existe_idx]["created_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                st.warning(f"⚠️ El producto {s_code} ya estaba registrado. Se actualizó su fecha de vencimiento a {f_venc.strftime('%d/%m/%Y')}.")
+                st.warning(f"⚠️ El SKU {s_code} ya estaba registrado. Se actualizó su fecha a {f_venc.strftime('%d/%m/%Y')}.")
             else:
                 st.session_state.vencimientos.append({
                     "id": len(st.session_state.vencimientos) + 1,
@@ -325,7 +357,7 @@ with tab1:
         else:
             st.warning("⚠️ Debes seleccionar un SKU primero.")
 
-    st.markdown('<p class="sub-title">📋 Registros Guardados (Permanecen 3 días activos)</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">📋 Registros Guardados (Activos durante 3 días)</p>', unsafe_allow_html=True)
     
     if st.session_state.vencimientos:
         for idx, row in enumerate(st.session_state.vencimientos):
@@ -344,8 +376,7 @@ with tab1:
         st.divider()
         df_venc_out = pd.DataFrame(st.session_state.vencimientos)[["SKU", "Descripción del Producto", "Fecha Vencimiento"]]
         
-        subtitulo_excel = f"Reporte de Fechas de Vencimiento — Generado: {date.today().strftime('%d/%m/%Y')}"
-        excel_bytes = exportar_excel_inesco(df_venc_out, subtitulo=subtitulo_excel, titulo_hoja="Fechas_Vencimiento")
+        excel_bytes = exportar_excel_inesco(df_venc_out, nombre_ruta="Vencimientos_Inesco")
         
         col_dl, col_sh = st.columns([1, 1])
         with col_dl:
@@ -390,14 +421,13 @@ with tab2:
             st.session_state.catalogo.pop(idx)
             st.rerun()
 
-# --- TAB 3: EXTRACCIÓN POR RUTAS 51, 52 Y 53 CON TOTALIZACIÓN ---
+# --- TAB 3: EXTRACCIÓN PDF POR RUTAS INDIVIDUALES (51, ML3E51, 52, 53) ---
 with tab3:
-    st.markdown('<p class="sub-title">📄 Extracción de Planillas PDF por Rutas (Solo 51, 52 y 53)</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">📄 Lectura de PDF y Extracción por Rutas</p>', unsafe_allow_html=True)
     
-    uploaded_file = st.file_uploader("Cargar documento PDF que contiene las planillas:", type=["pdf"])
+    uploaded_file = st.file_uploader("Cargar documento PDF con las planillas:", type=["pdf"])
     
     if uploaded_file:
-        rutas_permitidas = ["51", "52", "53"]
         rutas_data = {}
         ruta_activa = None
         
@@ -407,48 +437,65 @@ with tab3:
                 lineas = texto.split('\n')
                 
                 for line in lineas:
-                    # Búsqueda estricta de las Rutas 51, 52 o 53
-                    match_r = re.search(r'\b(51|52|53)\b', line)
-                    if ("RUTA" in line.upper() or "CARGUE" in line.upper() or "CARGA" in line.upper()) and match_r:
-                        ruta_activa = f"Ruta {match_r.group(1)}"
+                    # Búsqueda flexible de Rutas: "ML3E51", "51", "52", "53" o patrones "RUTA XX"
+                    match_ruta = re.search(r'(?:RUTA|CARGUE|CARGA)?\s*(ML3E51|51|52|53)\b', line, re.IGNORECASE)
+                    
+                    # Si la línea especifica el identificador de la ruta
+                    if match_ruta and any(kw in line.upper() for kw in ["RUTA", "CARGUE", "CARGA", "ML3E51", "PLANILLA"]):
+                        r_code = match_ruta.group(1).upper()
+                        ruta_activa = f"Ruta_{r_code}"
                         if ruta_activa not in rutas_data:
                             rutas_data[ruta_activa] = []
                     
-                    # Extraer productos únicamente si estamos dentro de una Ruta válida (51, 52 o 53)
+                    # Extracción de ítems si hay una ruta identificada
                     if ruta_activa:
-                        match_item = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s+(\d+)\s*$', line)
-                        if match_item:
+                        # Patrón con Slash: ej. "135718 COCA COLA 10/5" (10 cajas, 5 botellas)
+                        match_slash = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*/\s*(\d+)\s*$', line)
+                        if match_slash:
                             rutas_data[ruta_activa].append({
-                                "SKU (Material)": match_item.group(1),
-                                "Descripción del Producto": match_item.group(2).strip(),
-                                "Cantidad (Cajas)": int(match_item.group(3)),
-                                "Cantidad (Unidades)": int(match_item.group(4))
+                                "SKU (Material)": match_slash.group(1),
+                                "Descripción del Producto": match_slash.group(2).strip(),
+                                "Cantidad (Cajas)": int(match_slash.group(3)),
+                                "Cantidad (Unidades)": int(match_slash.group(4))
                             })
-                        else:
-                            match_item2 = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*$', line)
-                            if match_item2:
-                                rutas_data[ruta_activa].append({
-                                    "SKU (Material)": match_item2.group(1),
-                                    "Descripción del Producto": match_item2.group(2).strip(),
-                                    "Cantidad (Cajas)": int(match_item2.group(3)),
-                                    "Cantidad (Unidades)": 0
-                                })
+                            continue
+                        
+                        # Patrón con espacio: ej. "135718 COCA COLA 10 5" (10 cajas, 5 botellas)
+                        match_espacio = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s+(\d+)\s*$', line)
+                        if match_espacio:
+                            rutas_data[ruta_activa].append({
+                                "SKU (Material)": match_espacio.group(1),
+                                "Descripción del Producto": match_espacio.group(2).strip(),
+                                "Cantidad (Cajas)": int(match_espacio.group(3)),
+                                "Cantidad (Unidades)": int(match_espacio.group(4))
+                            })
+                            continue
 
-        # Filtrar rutas sin ítems
+                        # Patrón solo cajas: ej. "135718 COCA COLA 10"
+                        match_cajas = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*$', line)
+                        if match_cajas:
+                            rutas_data[ruta_activa].append({
+                                "SKU (Material)": match_cajas.group(1),
+                                "Descripción del Producto": match_cajas.group(2).strip(),
+                                "Cantidad (Cajas)": int(match_cajas.group(3)),
+                                "Cantidad (Unidades)": 0
+                            })
+
+        # Filtrar rutas vacías
         rutas_data = {k: v for k, v in rutas_data.items() if len(v) > 0}
 
         if rutas_data:
-            st.success(f"✅ Se extrajeron correctamente {len(rutas_data)} ruta(s).")
+            st.success(f"✅ Se detectaron y procesaron {len(rutas_data)} ruta(s) en el PDF.")
             
             for nombre_ruta in sorted(rutas_data.keys()):
                 items = rutas_data[nombre_ruta]
                 df_r = pd.DataFrame(items)
                 
-                # Cálculo de Totales
+                # Totales
                 total_cajas = df_r["Cantidad (Cajas)"].sum()
                 total_unidades = df_r["Cantidad (Unidades)"].sum()
                 
-                # Crear fila de totales para visualización y exportación
+                # Fila resumen de Totales
                 df_totales = df_r.copy()
                 df_totales.loc[len(df_totales)] = {
                     "SKU (Material)": "TOTALES",
@@ -457,27 +504,27 @@ with tab3:
                     "Cantidad (Unidades)": total_unidades
                 }
                 
-                st.markdown(f"### 🚛 {nombre_ruta}")
+                # Reemplazar guion bajo por espacio para visualización
+                titulo_vis = nombre_ruta.replace("_", " ")
+                st.markdown(f"### 🚚 {titulo_vis}")
                 
-                # Métricas visuales de totales arriba de la tabla
+                # Métricas rápidas
                 m1, m2 = st.columns(2)
                 m1.metric("📦 Total Cajas", f"{total_cajas:,}")
                 m2.metric("🍾 Total Unidades (Botellas)", f"{total_unidades:,}")
                 
                 st.dataframe(df_totales, use_container_width=True)
                 
-                subtitulo = f"Planilla Inesco — {nombre_ruta} — Fecha: {date.today().strftime('%d/%m/%Y')}"
-                excel_bytes = exportar_excel_inesco(df_totales, subtitulo=subtitulo, titulo_hoja=nombre_ruta)
-                
-                s_nombre = nombre_ruta.replace(" ", "_")
+                # Generar Excel individual por ruta
+                excel_bytes = exportar_excel_inesco(df_totales, nombre_ruta=titulo_vis)
                 
                 st.download_button(
-                    label=f"📥 Descargar Excel: {nombre_ruta}",
+                    label=f"📥 Descargar Excel para {titulo_vis}",
                     data=excel_bytes,
-                    file_name=f"Planilla_{s_nombre}_{date.today()}.xlsx",
+                    file_name=f"Planilla_{nombre_ruta}_{date.today()}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"dl_{s_nombre}"
+                    key=f"dl_{nombre_ruta}"
                 )
                 st.divider()
         else:
-            st.error("⚠️ No se encontraron las rutas 51, 52 o 53 en el archivo subido. Asegúrate de adjuntar el PDF de planillas correspondiente.")
+            st.error("⚠️ No se encontraron las rutas objetivo (51, ML3E51, 52 o 53) en el PDF cargado. Por favor verifica el documento o la estructura del texto.")
