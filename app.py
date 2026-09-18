@@ -6,7 +6,7 @@ import re
 from datetime import datetime, date
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.utils import get_column_letter
 
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS
@@ -205,12 +205,12 @@ st.session_state.vencimientos = [
 ]
 
 # ---------------------------------------------------------
-# 3. FUNCIÓN PARA GENERAR EXCEL CON ENCABEZADOS Y ESTILOS
+# 3. FUNCIÓN PARA GENERAR EXCEL ROBUSTA (SIN ERRORES DE ATRIBUTO)
 # ---------------------------------------------------------
 def exportar_excel_inesco(df, subtitulo, titulo_hoja="Hoja1"):
     wb = Workbook()
     ws = wb.active
-    ws.title = titulo_hoja[:30].replace(":", "").replace("/", "")
+    ws.title = titulo_hoja[:30].replace(":", "").replace("/", "").replace("\\", "")
     
     # Estilos
     blue_title_font = Font(color="003366", bold=True, size=14, name="Calibri")
@@ -225,7 +225,7 @@ def exportar_excel_inesco(df, subtitulo, titulo_hoja="Hoja1"):
         bottom=Side(style='thin', color='D9D9D9')
     )
     
-    # Fila 1: Título Principal
+    # Fila 1: Título Principal Centrado
     num_cols = len(df.columns)
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(num_cols, 3))
     cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO")
@@ -240,9 +240,9 @@ def exportar_excel_inesco(df, subtitulo, titulo_hoja="Hoja1"):
     
     ws.row_dimensions[1].height = 25
     ws.row_dimensions[2].height = 18
-    ws.row_dimensions[3].height = 10 # Fila vacía de espacio
+    ws.row_dimensions[3].height = 10 # Espaciador
     
-    # Fila 4: Encabezados de Tabla
+    # Fila 4: Encabezados
     for col_idx, col_name in enumerate(df.columns, start=1):
         c = ws.cell(row=4, column=col_idx, value=col_name)
         c.fill = header_fill
@@ -255,19 +255,20 @@ def exportar_excel_inesco(df, subtitulo, titulo_hoja="Hoja1"):
         for col_idx, val in enumerate(row_data, start=1):
             c = ws.cell(row=row_idx, column=col_idx, value=val)
             c.border = thin_border
-            if col_idx in [1, 3, 4]:  # SKU, Cantidades o Fechas centrados
+            if col_idx in [1, 3, 4]:  # SKU, Cajas, Unidades
                 c.alignment = Alignment(horizontal="center", vertical="center")
             else:
                 c.alignment = Alignment(horizontal="left", vertical="center")
                 
-    # Auto-ajustar ancho de columnas
-    for col in ws.columns:
-        col_letter = col[0].column_letter
+    # Auto-ajustar ancho de columnas usando get_column_letter para evitar errores
+    for col_idx in range(1, num_cols + 1):
+        col_letter = get_column_letter(col_idx)
         max_len = 0
-        for cell in col:
-            if cell.row >= 4 and cell.value:
-                max_len = max(max_len, len(str(cell.value)))
-        ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+        for row_idx in range(4, 5 + len(df)):
+            cell_val = ws.cell(row=row_idx, column=col_idx).value
+            if cell_val:
+                max_len = max(max_len, len(str(cell_val)))
+        ws.column_dimensions[col_letter].width = max(max_len + 5, 12)
         
     output = io.BytesIO()
     wb.save(output)
@@ -276,7 +277,7 @@ def exportar_excel_inesco(df, subtitulo, titulo_hoja="Hoja1"):
 # ---------------------------------------------------------
 # 4. PESTAÑAS Y NAVEGACIÓN
 # ---------------------------------------------------------
-tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF por Ruta"])
+tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF por Rutas (51, 52, 53)"])
 
 # --- TAB 1: FECHAS DE VENCIMIENTO ---
 with tab1:
@@ -370,15 +371,15 @@ with tab2:
             st.session_state.catalogo.pop(idx)
             st.rerun()
 
-# --- TAB 3: EXTRACTION PDF FLEXIBLE ---
+# --- TAB 3: EXTRACCIÓN MULTI-RUTA (51, 52, 53) ---
 with tab3:
-    st.markdown('<p class="sub-title">📄 Extraer Datos de Planillas PDF a Excel</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">📄 Extracción de Planillas PDF por Rutas / Cargues (51, 52, 53)</p>', unsafe_allow_html=True)
     
-    uploaded_file = st.file_uploader("Cargar documento PDF de planillas:", type=["pdf"])
+    uploaded_file = st.file_uploader("Cargar documento PDF que contiene las rutas:", type=["pdf"])
     
     if uploaded_file:
-        items_extraidos = []
-        info_ruta = f"Fecha de Entrega: {date.today().strftime('%d.%m.%Y')}"
+        rutas_data = {}
+        ruta_actual = "Ruta General / Unificada"
         
         with pdfplumber.open(uploaded_file) as pdf:
             for page in pdf.pages:
@@ -386,43 +387,60 @@ with tab3:
                 lineas = texto.split('\n')
                 
                 for line in lineas:
-                    # Capturar número de ruta/carga si está presente
-                    if "Ruta" in line or "Carga" in line:
-                        info_ruta = line.strip()
-                    
-                    # Expresión regular flexible para capturar: SKU | DESCRIPCIÓN | CAJAS | UNIDADES
-                    match = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s+(\d+)\s*$', line)
-                    if match:
-                        items_extraidos.append({
-                            "SKU (Material)": match.group(1),
-                            "Descripción del Producto": match.group(2).strip(),
-                            "Cantidad (Cajas)": int(match.group(3)),
-                            "Cantidad (Unidades)": int(match.group(4))
+                    # Detectar cambio de Ruta / Cargue que termine en 51, 52 o 53 o contenga nombre de ruta
+                    match_ruta = re.search(r'(?:RUTA|CARGUE|CARGA)[\s\w:-]*(51|52|53)', line, re.IGNORECASE)
+                    if match_ruta:
+                        num_r = match_ruta.group(1)
+                        ruta_actual = f"Ruta / Cargue {num_r}"
+                    elif "RUTA" in line.upper() or "CARGUE" in line.upper():
+                        ruta_actual = line.strip()
+
+                    if ruta_actual not in rutas_data:
+                        rutas_data[ruta_actual] = []
+                        
+                    # Extracción de producto: SKU | Descripción | Cajas | Unidades
+                    match_item = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s+(\d+)\s*$', line)
+                    if match_item:
+                        rutas_data[ruta_actual].append({
+                            "SKU (Material)": match_item.group(1),
+                            "Descripción del Producto": match_item.group(2).strip(),
+                            "Cantidad (Cajas)": int(match_item.group(3)),
+                            "Cantidad (Unidades)": int(match_item.group(4))
                         })
                     else:
-                        # Intento con 1 sola cantidad
-                        match2 = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*$', line)
-                        if match2:
-                            items_extraidos.append({
-                                "SKU (Material)": match2.group(1),
-                                "Descripción del Producto": match2.group(2).strip(),
-                                "Cantidad (Cajas)": int(match2.group(3)),
+                        match_item2 = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*$', line)
+                        if match_item2:
+                            rutas_data[ruta_actual].append({
+                                "SKU (Material)": match_item2.group(1),
+                                "Descripción del Producto": match_item2.group(2).strip(),
+                                "Cantidad (Cajas)": int(match_item2.group(3)),
                                 "Cantidad (Unidades)": 0
                             })
-                            
-        if items_extraidos:
-            df_pdf = pd.DataFrame(items_extraidos)
-            st.success(f"✅ Se extrajeron exitosamente {len(df_pdf)} registros del PDF.")
-            st.dataframe(df_pdf, use_container_width=True)
+
+        # Filtrar rutas vacías
+        rutas_data = {k: v for k, v in rutas_data.items() if len(v) > 0}
+
+        if rutas_data:
+            st.success(f"✅ Se encontraron {len(rutas_data)} seccion(es) / ruta(s) con productos.")
             
-            subtitulo_pdf = f"Reporte Planilla Inesco — {info_ruta}"
-            excel_pdf = exportar_excel_inesco(df_pdf, subtitulo=subtitulo_pdf, titulo_hoja="Planilla_Extraida")
-            
-            st.download_button(
-                label="📥 Descargar Planilla Extraída en Excel",
-                data=excel_pdf,
-                file_name=f"Planilla_Extraida_{date.today()}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            for nombre_ruta, items in rutas_data.items():
+                df_r = pd.DataFrame(items)
+                st.markdown(f"### 🚛 {nombre_ruta}")
+                st.dataframe(df_r, use_container_width=True)
+                
+                subtitulo = f"Planilla Inesco — {nombre_ruta} — Fecha: {date.today().strftime('%d/%m/%Y')}"
+                excel_bytes = exportar_excel_inesco(df_r, subtitulo=subtitulo, titulo_hoja=nombre_ruta)
+                
+                # Nombre limpio para el archivo individual
+                s_nombre = re.sub(r'[^\w\s-]', '', nombre_ruta).strip().replace(' ', '_')
+                
+                st.download_button(
+                    label=f"📥 Descargar Excel Individual: {nombre_ruta}",
+                    data=excel_bytes,
+                    file_name=f"Planilla_{s_nombre}_{date.today()}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"dl_{s_nombre}"
+                )
+                st.divider()
         else:
-            st.warning("No se encontraron registros legibles en el formato estándar. Asegúrate de subirlos en formato de texto digital generado.")
+            st.warning("No se lograron estructurar filas de productos. Revisa que el PDF contenga texto digital seleccionable.")
