@@ -4,7 +4,6 @@ import pdfplumber
 import io
 import re
 import json
-import os
 from datetime import datetime, date
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -82,25 +81,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 2. ALMACENAMIENTO PERSISTENTE (LOCAL FILE JSON)
+# 2. GESTIÓN DE DATOS EN SESIÓN CON RESPALDO SEGURO
 # ---------------------------------------------------------
-DB_FILE = "vencimientos_inesco.json"
-
-def cargar_datos_persistentes():
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            return []
-    return []
-
-def guardar_datos_persistentes(data):
-    with open(DB_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-
 if "vencimientos" not in st.session_state:
-    st.session_state.vencimientos = cargar_datos_persistentes()
+    st.session_state.vencimientos = []
 
 CATALOGO_INICIAL = [
     {"sku": "135718", "descripcion": "COCA-COLA 8 OZ VIR(30)"},
@@ -337,10 +321,31 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
 # ---------------------------------------------------------
 tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF (Rutas)"])
 
-# --- TAB 1: FECHAS DE VENCIMIENTO (PERSISTENTES) ---
+# --- TAB 1: FECHAS DE VENCIMIENTO CON RESPALDO NUBE ---
 with tab1:
     st.markdown('<p class="sub-title">➕ Agregar Registro de Vencimiento</p>', unsafe_allow_html=True)
     
+    # Herramientas de respaldo rápido para la bodega
+    with st.expander("📂 Opciones de Respaldo (Guardar / Cargar en Celular)"):
+        if st.session_state.vencimientos:
+            json_str = json.dumps(st.session_state.vencimientos, ensure_ascii=False, indent=4)
+            st.download_button(
+                label="📥 Descargar Archivo Respaldo (.json)",
+                data=json_str,
+                file_name=f"respaldo_vencimientos_{date.today()}.json",
+                mime="application/json"
+            )
+        
+        uploaded_backup = st.file_uploader("📤 Subir Respaldo Previo (.json)", type=["json"])
+        if uploaded_backup is not None:
+            try:
+                data_recuperada = json.load(uploaded_backup)
+                st.session_state.vencimientos = data_recuperada
+                st.success("✅ ¡Datos restaurados exitosamente desde tu respaldo!")
+                st.rerun()
+            except Exception as e:
+                st.error("⚠️ El archivo no es válido.")
+
     skus_opt = [f"{item['sku']} - {item['descripcion']}" for item in st.session_state.catalogo]
     
     c1, c2 = st.columns([2, 1])
@@ -367,14 +372,12 @@ with tab1:
                     "Fecha Vencimiento": f_venc.strftime("%d/%m/%Y"),
                     "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 })
-                st.success("✅ Registro guardado de forma permanente.")
-            
-            guardar_datos_persistentes(st.session_state.vencimientos)
+                st.success("✅ Registro guardado con éxito.")
             st.rerun()
         else:
             st.warning("⚠️ Debes seleccionar un SKU primero.")
 
-    st.markdown('<p class="sub-title">📋 Registros Guardados Permanentemente</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">📋 Registros Guardados</p>', unsafe_allow_html=True)
     
     if st.session_state.vencimientos:
         for idx, row in enumerate(st.session_state.vencimientos):
@@ -388,12 +391,7 @@ with tab1:
             
             if col_d.button("❌ Borrar", key=f"del_{row['id']}"):
                 st.session_state.vencimientos.pop(idx)
-                guardar_datos_persistentes(st.session_state.vencimientos)
                 st.rerun()
-
-        if st.button("🔄 Guardar Cambios en Fechas Modificadas"):
-            guardar_datos_persistentes(st.session_state.vencimientos)
-            st.success("Cambios actualizados y guardados permanentemente.")
 
         st.divider()
         df_venc_out = pd.DataFrame(st.session_state.vencimientos)[["SKU", "Descripción del Producto", "Fecha Vencimiento"]]
