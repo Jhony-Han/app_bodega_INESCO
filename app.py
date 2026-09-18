@@ -9,7 +9,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 # ---------------------------------------------------------
-# 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS RESPONSIVOS
+# 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Inesco | Gestión y Extracción",
@@ -227,7 +227,6 @@ if "catalogo" not in st.session_state:
 if "vencimientos" not in st.session_state:
     st.session_state.vencimientos = []
 
-# Limpieza automática a los 3 días
 ahora = datetime.now()
 st.session_state.vencimientos = [
     reg for reg in st.session_state.vencimientos
@@ -235,12 +234,12 @@ st.session_state.vencimientos = [
 ]
 
 # ---------------------------------------------------------
-# 3. GENERADOR DE EXCEL ROBUSTO CON FORMATO MEJORADO
+# 3. EXPORTAR EXCEL CON FORMATO OFICIAL INESCO
 # ---------------------------------------------------------
 def exportar_excel_inesco(df, nombre_ruta, fecha_str):
     wb = Workbook()
     ws = wb.active
-    ws.title = nombre_ruta.replace(" ", "_")[:30]
+    ws.title = nombre_ruta.replace(" ", "_").replace(":", "")[:30]
     
     blue_title_font = Font(color="003366", bold=True, size=14, name="Calibri")
     sub_font = Font(italic=True, size=10, name="Calibri", color="333333")
@@ -258,13 +257,13 @@ def exportar_excel_inesco(df, nombre_ruta, fecha_str):
     )
     
     num_cols = len(df.columns)
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(num_cols, 3))
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(num_cols, 4))
     cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO")
     cell_t.font = blue_title_font
     cell_t.alignment = Alignment(horizontal="center", vertical="center")
     
-    subtitulo = f"Reporte de Planilla: {nombre_ruta} — Fecha: {fecha_str}"
-    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max(num_cols, 3))
+    subtitulo = f"Fecha de Entrega: {fecha_str} | Ruta / Carga: {nombre_ruta}"
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max(num_cols, 4))
     cell_s = ws.cell(row=2, column=1, value=subtitulo)
     cell_s.font = sub_font
     cell_s.alignment = Alignment(horizontal="left", vertical="center")
@@ -292,7 +291,7 @@ def exportar_excel_inesco(df, nombre_ruta, fecha_str):
                 c.fill = total_fill
                 c.font = total_font
             
-            if col_idx in [1, 3, 4, 5]:
+            if col_idx in [1, 3, 4]:
                 c.alignment = Alignment(horizontal="center", vertical="center")
             else:
                 c.alignment = Alignment(horizontal="left", vertical="center")
@@ -414,19 +413,18 @@ with tab2:
             st.session_state.catalogo.pop(idx)
             st.rerun()
 
-# --- TAB 3: EXTRACCIÓN FILTRADA DE RUTAS (51, ML3E51, 52, 53) ---
+# --- TAB 3: EXTRACCIÓN FLEXIBLE Y UNIVERSAL DE PLANILLAS PDF ---
 with tab3:
-    st.markdown('<p class="sub-title">📄 Extracción Filtrada por Ruta y Conteo Exacto</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">📄 Lectura Universal de PDF y Extracción por Ruta</p>', unsafe_allow_html=True)
     
     uploaded_file = st.file_uploader("Cargar documento PDF con las planillas:", type=["pdf"])
     
     if uploaded_file:
         rutas_data = {}
-        ruta_activa = None
-        fecha_detectada = date.today().strftime('%d/%m/%Y')
+        ruta_actual = "Ruta Principal / Carga"
+        fecha_detectada = date.today().strftime('%d.%m.%Y')
         
-        # Palabras a ignorar estrictamente
-        palabras_omitir = ['REPARTIDOR', 'USUARIO', 'ESTATUS', 'TRANSPORTE', 'CAMION', 'CAMIÓN', 'ENTREGAS', 'ENTREGA']
+        palabras_ignorar = ['REPARTIDOR', 'USUARIO', 'ESTATUS', 'TRANSPORTE', 'CAMION', 'CAMIÓN', 'ENTREGAS']
         
         with pdfplumber.open(uploaded_file) as pdf:
             for page in pdf.pages:
@@ -434,114 +432,108 @@ with tab3:
                 lineas = texto.split('\n')
                 
                 for line in lineas:
-                    line_upper = line.upper().strip()
+                    line_clean = line.strip()
+                    line_upper = line_clean.upper()
                     
-                    # 1. Ignorar encabezados innecesarios
-                    if any(p in line_upper for p in palabras_omitir):
+                    # Ignorar información del vehículo/repartidor
+                    if any(p in line_upper for p in palabras_ignorar):
                         continue
-                    
-                    # 2. Capturar Fecha
-                    match_fecha = re.search(r'(\d{2}[/.-]\d{2}[/.-]\d{4}|\d{4}[/.-]\d{2}[/.-]\d{2})', line)
-                    if match_fecha and "FECHA" in line_upper:
-                        fecha_detectada = match_fecha.group(1)
-                    
-                    # 3. Detectar Ruta / Carga (51, ML3E51, 52, 53)
-                    match_ruta = re.search(r'(?:RUTA|CARGUE|CARGA|PLANILLA)?[\s:-]*(ML3E51|51|52|53)\b', line_upper)
-                    if match_ruta and any(kw in line_upper for kw in ["RUTA", "CARGUE", "CARGA", "ML3E51"]):
-                        r_code = match_ruta.group(1)
-                        ruta_activa = f"Ruta_{r_code}"
-                        if ruta_activa not in rutas_data:
-                            rutas_data[ruta_activa] = []
-                    
-                    # 4. Extraer ítems solo si estamos en una ruta activa
-                    if ruta_activa:
-                        # Detección de Subtotales de familia o Totales
-                        if "SUBTOTAL" in line_upper or "TOTAL" in line_upper:
-                            match_sub = re.search(r'(SUBTOTAL\s*FAMILIA|TOTAL\s*GENERAL|TOTAL)[:\s]*(.*)', line, re.IGNORECASE)
-                            if match_sub:
-                                rutas_data[ruta_activa].append({
-                                    "Material (SKU)": "TOTAL",
-                                    "Descripción": match_sub.group(1).strip(),
-                                    "Cantidad (Cajas/Unidades)": match_sub.group(2).strip(),
-                                    "Cajas": 0,
-                                    "Unidades": 0
-                                })
-                            continue
-
-                        # Detección de productos con Slash (Cajas / Botellas)
-                        match_slash = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*/\s*(\d+)\s*$', line)
-                        if match_slash:
-                            cajas = int(match_slash.group(3))
-                            unid = int(match_slash.group(4))
-                            rutas_data[ruta_activa].append({
-                                "Material (SKU)": match_slash.group(1),
-                                "Descripción": match_slash.group(2).strip(),
-                                "Cantidad (Cajas/Unidades)": f"{cajas} / {unid}",
-                                "Cajas": cajas,
-                                "Unidades": unid
+                        
+                    # Extraer Fecha de Entrega si existe
+                    if "FECHA" in line_upper:
+                        match_f = re.search(r'(\d{2}[/.-]\d{2}[/.-]\d{4}|\d{4}[/.-]\d{2}[/.-]\d{2})', line_clean)
+                        if match_f:
+                            fecha_detectada = match_f.group(1)
+                            
+                    # Identificar cambio de Ruta / Carga
+                    match_r = re.search(r'(?:RUTA|CARGA|CARGUE)[\s/:.-]*([A-Z0-9/-]+)', line_clean, re.IGNORECASE)
+                    if match_r and len(match_r.group(1)) >= 2:
+                        ruta_actual = f"Ruta / Carga: {match_r.group(1)}"
+                        
+                    if ruta_actual not in rutas_data:
+                        rutas_data[ruta_actual] = []
+                        
+                    # Detección de Subtotales/Totales
+                    if "SUBTOTAL" in line_upper or "TOTAL" in line_upper:
+                        match_sub = re.search(r'(SUBTOTAL\s*FAMILIA|TOTAL\s*GENERAL|TOTAL)[:\s]*(.*)', line_clean, re.IGNORECASE)
+                        if match_sub:
+                            rutas_data[ruta_actual].append({
+                                "SKU (Material)": "TOTAL",
+                                "Descripción del Producto": match_sub.group(1).strip(),
+                                "Cantidad (Cajas)": match_sub.group(2).strip(),
+                                "Cantidad (Unidades)": ""
                             })
-                            continue
+                        continue
 
-                        # Detección de productos con espacio
-                        match_espacio = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s+(\d+)\s*$', line)
-                        if match_espacio:
-                            cajas = int(match_espacio.group(3))
-                            unid = int(match_espacio.group(4))
-                            rutas_data[ruta_activa].append({
-                                "Material (SKU)": match_espacio.group(1),
-                                "Descripción": match_espacio.group(2).strip(),
-                                "Cantidad (Cajas/Unidades)": f"{cajas} / {unid}",
-                                "Cajas": cajas,
-                                "Unidades": unid
-                            })
-                            continue
+                    # Detección de filas con Cajas / Botellas separadas por Slash "/"
+                    match_slash = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*/\s*(\d+)\s*$', line_clean)
+                    if match_slash:
+                        rutas_data[ruta_actual].append({
+                            "SKU (Material)": match_slash.group(1),
+                            "Descripción del Producto": match_slash.group(2).strip(),
+                            "Cantidad (Cajas)": int(match_slash.group(3)),
+                            "Cantidad (Unidades)": int(match_slash.group(4))
+                        })
+                        continue
 
-                        # Detección de productos solo cajas
-                        match_cajas = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*$', line)
-                        if match_cajas:
-                            cajas = int(match_cajas.group(3))
-                            rutas_data[ruta_activa].append({
-                                "Material (SKU)": match_cajas.group(1),
-                                "Descripción": match_cajas.group(2).strip(),
-                                "Cantidad (Cajas/Unidades)": f"{cajas} / 0",
-                                "Cajas": cajas,
-                                "Unidades": 0
-                            })
+                    # Detección de filas con 2 números separados por espacio
+                    match_dos_num = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s+(\d+)\s*$', line_clean)
+                    if match_dos_num:
+                        rutas_data[ruta_actual].append({
+                            "SKU (Material)": match_dos_num.group(1),
+                            "Descripción del Producto": match_dos_num.group(2).strip(),
+                            "Cantidad (Cajas)": int(match_dos_num.group(3)),
+                            "Cantidad (Unidades)": int(match_dos_num.group(4))
+                        })
+                        continue
 
-        # Filtrar rutas vacías
+                    # Detección de filas con 1 solo número al final (Cajas)
+                    match_un_num = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*$', line_clean)
+                    if match_un_num:
+                        rutas_data[ruta_actual].append({
+                            "SKU (Material)": match_un_num.group(1),
+                            "Descripción del Producto": match_un_num.group(2).strip(),
+                            "Cantidad (Cajas)": int(match_un_num.group(3)),
+                            "Cantidad (Unidades)": 0
+                        })
+
+        # Limpiar rutas vacías
         rutas_data = {k: v for k, v in rutas_data.items() if len(v) > 0}
 
         if rutas_data:
-            st.success(f"✅ Se procesaron {len(rutas_data)} ruta(s) con éxito.")
+            st.success(f"✅ Extracción completada. Se generaron {len(rutas_data)} reporte(s) de planilla.")
             
-            for nombre_ruta in sorted(rutas_data.keys()):
-                items = rutas_data[nombre_ruta]
+            for nombre_ruta, items in rutas_data.items():
                 df_r = pd.DataFrame(items)
                 
-                total_cajas = df_r["Cajas"].sum()
-                total_unidades = df_r["Unidades"].sum()
+                # Calcular totales reales de cajas y botellas
+                cajas_num = pd.to_numeric(df_r["Cantidad (Cajas)"], errors="coerce").fillna(0)
+                unid_num = pd.to_numeric(df_r["Cantidad (Unidades)"], errors="coerce").fillna(0)
                 
-                # Formato visual limpio ocultando columnas numéricas internas de suma
-                df_mostrar = df_r[["Material (SKU)", "Descripción", "Cantidad (Cajas/Unidades)"]].copy()
+                total_cajas = int(cajas_num.sum())
+                total_unidades = int(unid_num.sum())
                 
-                titulo_vis = nombre_ruta.replace("_", " ")
-                st.markdown(f"### 🚚 {titulo_vis}")
+                st.markdown(f"### 🚚 {nombre_ruta}")
                 
+                # Resumen de Métricas
                 m1, m2 = st.columns(2)
                 m1.metric("📦 Conteo Total Cajas", f"{total_cajas:,}")
                 m2.metric("🍾 Conteo Total Unidades (Botellas)", f"{total_unidades:,}")
                 
-                st.dataframe(df_mostrar, use_container_width=True)
+                st.dataframe(df_r, use_container_width=True)
                 
-                excel_bytes = exportar_excel_inesco(df_mostrar, nombre_ruta=titulo_vis, fecha_str=fecha_detectada)
+                # Generar Excel Individual con formato Coca-Cola/Inesco
+                excel_bytes = exportar_excel_inesco(df_r, nombre_ruta=nombre_ruta, fecha_str=fecha_detectada)
+                
+                s_key = re.sub(r'[^\w]', '_', nombre_ruta)
                 
                 st.download_button(
-                    label=f"📥 Descargar Excel para {titulo_vis}",
+                    label=f"📥 Descargar Excel para {nombre_ruta}",
                     data=excel_bytes,
-                    file_name=f"Planilla_{nombre_ruta}_{date.today()}.xlsx",
+                    file_name=f"Planilla_{s_key}_{date.today()}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"dl_{nombre_ruta}"
+                    key=f"dl_{s_key}"
                 )
                 st.divider()
         else:
-            st.error("⚠️ No se identificaron las rutas objetivo (51, ML3E51, 52 o 53) en el PDF. Revisa el documento adjunto.")
+            st.warning("No se encontraron productos legibles en el PDF. Verifica que sea un documento en formato digital generado directamente del sistema.")
