@@ -75,7 +75,9 @@ tab1, tab2 = st.tabs([
 with tab1:
     st.header("📄 Convertir PDF de Planilla")
     pdf_file = st.file_uploader(
-        "Sube la planilla en PDF desde tu celular", type=["pdf"]
+        "Sube la planilla en PDF desde tu celular",
+        type=["pdf"],
+        key="pdf_uploader_key",
     )
 
     if pdf_file is not None:
@@ -128,7 +130,7 @@ with tab1:
             df_all = pd.DataFrame(items)
             st.subheader("Rutas Generadas para Descargar:")
 
-            for ruta, group in df_all.groupby("Ruta"):
+            for idx, (ruta, group) in enumerate(df_all.groupby("Ruta")):
                 clean_name = ruta.replace("/", "_")
                 output = io.BytesIO()
 
@@ -162,6 +164,7 @@ with tab1:
                     data=output.getvalue(),
                     file_name=f"Ruta_{clean_name}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"btn_dl_ruta_{idx}",
                 )
 
 # ------------------------------------------
@@ -171,17 +174,24 @@ with tab2:
     st.header("📅 Digitación de Fechas")
 
     with st.form("form_fechas", clear_on_submit=True):
-        sku_in = st.text_input("Código SKU / Material:")
-        desc_in = st.text_input("Descripción del Producto:")
+        sku_in = st.text_input("Código SKU / Material:", key="sku_input_key")
+        desc_in = st.text_input(
+            "Descripción del Producto:", key="desc_input_key"
+        )
         fecha_in = st.date_input(
-            "Selecciona Fecha de Vencimiento:", datetime.date.today()
+            "Selecciona Fecha de Vencimiento:",
+            datetime.date.today(),
+            key="fecha_input_key",
         )
 
-        btn_save = st.form_submit_button("💾 Guardar Registro")
+        btn_save = st.form_submit_button(
+            "💾 Guardar Registro", key="btn_save_key"
+        )
 
     if btn_save and sku_in:
         guardar_fecha_local(sku_in, desc_in, fecha_in)
         st.success("¡Guardado correctamente!")
+        st.rerun()
 
     st.markdown("---")
     st.subheader("📋 Registros (Últimos 3 Días)")
@@ -199,6 +209,7 @@ with tab2:
                 data=f,
                 file_name=f"Fechas_Vencimiento_{datetime.date.today().strftime('%d_%m_%Y')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="btn_dl_fechas_key",
             )
     else:
         st.info("No hay registros guardados en los últimos 3 días.")
