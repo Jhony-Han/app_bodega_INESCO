@@ -3,10 +3,9 @@ import pandas as pd
 import pdfplumber
 import io
 import re
-from datetime import datetime, timedelta, date
+from datetime import datetime, date
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-# IMPORTACIÓN CORREGIDA PARA OPENPYXL
 from openpyxl.utils.dataframe import dataframe_to_rows
 
 # ---------------------------------------------------------
@@ -51,7 +50,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 2. CATÁLOGO COMPLETO EXTRAÍDO DEL EXCEL (136 SKUS)
+# 2. CATÁLOGO COMPLETO DE SKUs (136 SKUS)
 # ---------------------------------------------------------
 CATALOGO_INICIAL = [
     {"sku": "135718", "descripcion": "COCA-COLA 8 OZ VIR(30)"},
@@ -192,16 +191,13 @@ CATALOGO_INICIAL = [
     {"sku": "136710", "descripcion": "CLUB SOCIAL 9U ORIG 216G KIT24(1)"}
 ]
 
-# ---------------------------------------------------------
-# 3. GESTIÓN DE ESTADO Y AUTO-ELIMINACIÓN A LOS 3 DÍAS
-# ---------------------------------------------------------
 if "catalogo" not in st.session_state:
     st.session_state.catalogo = CATALOGO_INICIAL
 
 if "vencimientos" not in st.session_state:
     st.session_state.vencimientos = []
 
-# Limpieza automática: elimina registros mayores a 3 días (72 horas)
+# Limpieza automática a los 3 días
 ahora = datetime.now()
 st.session_state.vencimientos = [
     reg for reg in st.session_state.vencimientos
@@ -209,46 +205,76 @@ st.session_state.vencimientos = [
 ]
 
 # ---------------------------------------------------------
-# 4. FUNCIÓN PARA GENERAR EXCEL FORMATO COCA-COLA (ROJO)
+# 3. FUNCIÓN PARA GENERAR EXCEL CON ENCABEZADOS Y ESTILOS
 # ---------------------------------------------------------
-def exportar_excel_cocacola(df, titulo_hoja="Hoja1"):
+def exportar_excel_inesco(df, subtitulo, titulo_hoja="Hoja1"):
     wb = Workbook()
     ws = wb.active
     ws.title = titulo_hoja[:30].replace(":", "").replace("/", "")
     
-    red_fill = PatternFill(start_color="E41E2B", end_color="E41E2B", fill_type="solid")
-    white_bold_font = Font(color="FFFFFF", bold=True, name="Calibri", size=11)
+    # Estilos
+    blue_title_font = Font(color="003366", bold=True, size=14, name="Calibri")
+    sub_font = Font(italic=True, size=10, name="Calibri", color="333333")
+    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
+    
     thin_border = Border(
-        left=Side(style='thin', color='CCCCCC'),
-        right=Side(style='thin', color='CCCCCC'),
-        top=Side(style='thin', color='CCCCCC'),
-        bottom=Side(style='thin', color='CCCCCC')
+        left=Side(style='thin', color='D9D9D9'),
+        right=Side(style='thin', color='D9D9D9'),
+        top=Side(style='thin', color='D9D9D9'),
+        bottom=Side(style='thin', color='D9D9D9')
     )
     
-    for r in dataframe_to_rows(df, index=False, header=True):
-        ws.append(r)
-        
-    for cell in ws[1]:
-        cell.fill = red_fill
-        cell.font = white_bold_font
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-        
-    for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
-        for cell in row:
-            cell.border = thin_border
-            cell.alignment = Alignment(vertical="center")
-            
+    # Fila 1: Título Principal
+    num_cols = len(df.columns)
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(num_cols, 3))
+    cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO")
+    cell_t.font = blue_title_font
+    cell_t.alignment = Alignment(horizontal="center", vertical="center")
+    
+    # Fila 2: Subtítulo / Fecha / Ruta
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max(num_cols, 3))
+    cell_s = ws.cell(row=2, column=1, value=subtitulo)
+    cell_s.font = sub_font
+    cell_s.alignment = Alignment(horizontal="left", vertical="center")
+    
+    ws.row_dimensions[1].height = 25
+    ws.row_dimensions[2].height = 18
+    ws.row_dimensions[3].height = 10 # Fila vacía de espacio
+    
+    # Fila 4: Encabezados de Tabla
+    for col_idx, col_name in enumerate(df.columns, start=1):
+        c = ws.cell(row=4, column=col_idx, value=col_name)
+        c.fill = header_fill
+        c.font = header_font
+        c.alignment = Alignment(horizontal="center" if col_idx != 2 else "left", vertical="center")
+    ws.row_dimensions[4].height = 22
+    
+    # Filas de Datos
+    for row_idx, row_data in enumerate(df.values, start=5):
+        for col_idx, val in enumerate(row_data, start=1):
+            c = ws.cell(row=row_idx, column=col_idx, value=val)
+            c.border = thin_border
+            if col_idx in [1, 3, 4]:  # SKU, Cantidades o Fechas centrados
+                c.alignment = Alignment(horizontal="center", vertical="center")
+            else:
+                c.alignment = Alignment(horizontal="left", vertical="center")
+                
+    # Auto-ajustar ancho de columnas
     for col in ws.columns:
-        max_len = max(len(str(cell.value or '')) for cell in col)
         col_letter = col[0].column_letter
-        ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+        max_len = 0
+        for cell in col:
+            if cell.row >= 4 and cell.value:
+                max_len = max(max_len, len(str(cell.value)))
+        ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
         
     output = io.BytesIO()
     wb.save(output)
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 5. PESTAÑAS Y NAVEGACIÓN
+# 4. PESTAÑAS Y NAVEGACIÓN
 # ---------------------------------------------------------
 tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF por Ruta"])
 
@@ -270,7 +296,7 @@ with tab1:
             st.session_state.vencimientos.append({
                 "id": len(st.session_state.vencimientos) + 1,
                 "SKU": s_code,
-                "Descripción": s_desc,
+                "Descripción del Producto": s_desc,
                 "Fecha Vencimiento": f_venc.strftime("%d/%m/%Y"),
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             })
@@ -285,26 +311,26 @@ with tab1:
         for idx, row in enumerate(st.session_state.vencimientos):
             col_a, col_b, col_c, col_d = st.columns([2, 4, 3, 2])
             col_a.write(f"**{row['SKU']}**")
-            col_b.write(row['Descripción'])
+            col_b.write(row['Descripción del Producto'])
             
-            # Opción para Modificar la fecha
             fecha_actual = datetime.strptime(row['Fecha Vencimiento'], "%d/%m/%Y").date()
             nueva_f = col_c.date_input("Fecha", value=fecha_actual, key=f"date_{row['id']}")
             st.session_state.vencimientos[idx]['Fecha Vencimiento'] = nueva_f.strftime("%d/%m/%Y")
             
-            # Opción para Borrar
             if col_d.button("❌ Borrar", key=f"del_{row['id']}"):
                 st.session_state.vencimientos.pop(idx)
                 st.rerun()
 
         st.divider()
-        df_venc_out = pd.DataFrame(st.session_state.vencimientos)[["SKU", "Descripción", "Fecha Vencimiento"]]
-        excel_bytes = exportar_excel_cocacola(df_venc_out, "Vencimientos")
+        df_venc_out = pd.DataFrame(st.session_state.vencimientos)[["SKU", "Descripción del Producto", "Fecha Vencimiento"]]
+        
+        subtitulo_excel = f"Reporte de Fechas de Vencimiento — Generado: {date.today().strftime('%d/%m/%Y')}"
+        excel_bytes = exportar_excel_inesco(df_venc_out, subtitulo=subtitulo_excel, titulo_hoja="Fechas_Vencimiento")
         
         col_dl, col_sh = st.columns([1, 1])
         with col_dl:
             st.download_button(
-                label="📥 Descargar Reporte en Excel (Rojo)",
+                label="📥 Descargar Reporte en Excel",
                 data=excel_bytes,
                 file_name=f"Vencimientos_Inesco_{date.today()}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -344,56 +370,59 @@ with tab2:
             st.session_state.catalogo.pop(idx)
             st.rerun()
 
-# --- TAB 3: EXTRACTION PDF POR RUTAS SEPARADAS ---
+# --- TAB 3: EXTRACTION PDF FLEXIBLE ---
 with tab3:
-    st.markdown('<p class="sub-title">📄 Extraer PDF en Archivos Excel Independientes por Ruta</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">📄 Extraer Datos de Planillas PDF a Excel</p>', unsafe_allow_html=True)
     
     uploaded_file = st.file_uploader("Cargar documento PDF de planillas:", type=["pdf"])
     
     if uploaded_file:
+        items_extraidos = []
+        info_ruta = f"Fecha de Entrega: {date.today().strftime('%d.%m.%Y')}"
+        
         with pdfplumber.open(uploaded_file) as pdf:
-            texto_completo = ""
             for page in pdf.pages:
-                texto_completo += (page.extract_text() or "") + "\n"
+                texto = page.extract_text() or ""
+                lineas = texto.split('\n')
                 
-        # Separación de rutas por patrón
-        bloques = re.split(r'(RUTA\s*:\s*\d+)', texto_completo, flags=re.IGNORECASE)
-        
-        rutas_data = {}
-        if len(bloques) > 1:
-            for i in range(1, len(bloques), 2):
-                nombre_ruta = bloques[i].strip().upper()
-                contenido = bloques[i+1]
-                
-                lineas = contenido.split('\n')
-                items = []
                 for line in lineas:
-                    match = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*$', line)
+                    # Capturar número de ruta/carga si está presente
+                    if "Ruta" in line or "Carga" in line:
+                        info_ruta = line.strip()
+                    
+                    # Expresión regular flexible para capturar: SKU | DESCRIPCIÓN | CAJAS | UNIDADES
+                    match = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s+(\d+)\s*$', line)
                     if match:
-                        items.append({
-                            "SKU": match.group(1),
-                            "Descripción": match.group(2).strip(),
-                            "Cantidad": int(match.group(3))
+                        items_extraidos.append({
+                            "SKU (Material)": match.group(1),
+                            "Descripción del Producto": match.group(2).strip(),
+                            "Cantidad (Cajas)": int(match.group(3)),
+                            "Cantidad (Unidades)": int(match.group(4))
                         })
-                if items:
-                    rutas_data[nombre_ruta] = pd.DataFrame(items)
-        
-        if rutas_data:
-            st.success(f"Se detectaron {len(rutas_data)} rutas independientes en el PDF.")
+                    else:
+                        # Intento con 1 sola cantidad
+                        match2 = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*$', line)
+                        if match2:
+                            items_extraidos.append({
+                                "SKU (Material)": match2.group(1),
+                                "Descripción del Producto": match2.group(2).strip(),
+                                "Cantidad (Cajas)": int(match2.group(3)),
+                                "Cantidad (Unidades)": 0
+                            })
+                            
+        if items_extraidos:
+            df_pdf = pd.DataFrame(items_extraidos)
+            st.success(f"✅ Se extrajeron exitosamente {len(df_pdf)} registros del PDF.")
+            st.dataframe(df_pdf, use_container_width=True)
             
-            for ruta, df_ruta in rutas_data.items():
-                st.write(f"### {ruta}")
-                st.dataframe(df_ruta, use_container_width=True)
-                
-                excel_ruta = exportar_excel_cocacola(df_ruta, ruta)
-                
-                st.download_button(
-                    label=f"📥 Descargar Excel para {ruta}",
-                    data=excel_ruta,
-                    file_name=f"Planilla_{ruta.replace(' ', '_').replace(':', '')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"dl_{ruta}"
-                )
-                st.divider()
+            subtitulo_pdf = f"Reporte Planilla Inesco — {info_ruta}"
+            excel_pdf = exportar_excel_inesco(df_pdf, subtitulo=subtitulo_pdf, titulo_hoja="Planilla_Extraida")
+            
+            st.download_button(
+                label="📥 Descargar Planilla Extraída en Excel",
+                data=excel_pdf,
+                file_name=f"Planilla_Extraida_{date.today()}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
         else:
-            st.warning("No se detectaron marcas de RUTA en el PDF. Verifique el formato.")
+            st.warning("No se encontraron registros legibles en el formato estándar. Asegúrate de subirlos en formato de texto digital generado.")
