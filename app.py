@@ -6,7 +6,8 @@ import re
 from datetime import datetime, timedelta, date
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import dataframe_to_rows
+# IMPORTACIÓN CORREGIDA PARA OPENPYXL
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS
