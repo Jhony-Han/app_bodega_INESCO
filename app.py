@@ -234,12 +234,15 @@ st.session_state.vencimientos = [
 ]
 
 # ---------------------------------------------------------
-# 3. EXPORTAR EXCEL CON FORMATO OFICIAL INESCO
+# 3. EXPORTAR EXCEL CON FORMATO SEGURO PARA EXCEL
 # ---------------------------------------------------------
 def exportar_excel_inesco(df, nombre_ruta, fecha_str):
     wb = Workbook()
     ws = wb.active
-    ws.title = nombre_ruta.replace(" ", "_").replace(":", "")[:30]
+    
+    # Limpiar caracteres prohibidos en nombres de hojas de Excel: \ / ? * : [ ]
+    safe_title = re.sub(r'[\\/*?:[\]]', '_', nombre_ruta)
+    ws.title = safe_title[:30]
     
     blue_title_font = Font(color="003366", bold=True, size=14, name="Calibri")
     sub_font = Font(italic=True, size=10, name="Calibri", color="333333")
@@ -435,17 +438,14 @@ with tab3:
                     line_clean = line.strip()
                     line_upper = line_clean.upper()
                     
-                    # Ignorar información del vehículo/repartidor
                     if any(p in line_upper for p in palabras_ignorar):
                         continue
                         
-                    # Extraer Fecha de Entrega si existe
                     if "FECHA" in line_upper:
                         match_f = re.search(r'(\d{2}[/.-]\d{2}[/.-]\d{4}|\d{4}[/.-]\d{2}[/.-]\d{2})', line_clean)
                         if match_f:
                             fecha_detectada = match_f.group(1)
                             
-                    # Identificar cambio de Ruta / Carga
                     match_r = re.search(r'(?:RUTA|CARGA|CARGUE)[\s/:.-]*([A-Z0-9/-]+)', line_clean, re.IGNORECASE)
                     if match_r and len(match_r.group(1)) >= 2:
                         ruta_actual = f"Ruta / Carga: {match_r.group(1)}"
@@ -453,7 +453,6 @@ with tab3:
                     if ruta_actual not in rutas_data:
                         rutas_data[ruta_actual] = []
                         
-                    # Detección de Subtotales/Totales
                     if "SUBTOTAL" in line_upper or "TOTAL" in line_upper:
                         match_sub = re.search(r'(SUBTOTAL\s*FAMILIA|TOTAL\s*GENERAL|TOTAL)[:\s]*(.*)', line_clean, re.IGNORECASE)
                         if match_sub:
@@ -465,7 +464,6 @@ with tab3:
                             })
                         continue
 
-                    # Detección de filas con Cajas / Botellas separadas por Slash "/"
                     match_slash = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*/\s*(\d+)\s*$', line_clean)
                     if match_slash:
                         rutas_data[ruta_actual].append({
@@ -476,7 +474,6 @@ with tab3:
                         })
                         continue
 
-                    # Detección de filas con 2 números separados por espacio
                     match_dos_num = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s+(\d+)\s*$', line_clean)
                     if match_dos_num:
                         rutas_data[ruta_actual].append({
@@ -487,7 +484,6 @@ with tab3:
                         })
                         continue
 
-                    # Detección de filas con 1 solo número al final (Cajas)
                     match_un_num = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*$', line_clean)
                     if match_un_num:
                         rutas_data[ruta_actual].append({
@@ -497,7 +493,6 @@ with tab3:
                             "Cantidad (Unidades)": 0
                         })
 
-        # Limpiar rutas vacías
         rutas_data = {k: v for k, v in rutas_data.items() if len(v) > 0}
 
         if rutas_data:
@@ -506,7 +501,6 @@ with tab3:
             for nombre_ruta, items in rutas_data.items():
                 df_r = pd.DataFrame(items)
                 
-                # Calcular totales reales de cajas y botellas
                 cajas_num = pd.to_numeric(df_r["Cantidad (Cajas)"], errors="coerce").fillna(0)
                 unid_num = pd.to_numeric(df_r["Cantidad (Unidades)"], errors="coerce").fillna(0)
                 
@@ -515,14 +509,12 @@ with tab3:
                 
                 st.markdown(f"### 🚚 {nombre_ruta}")
                 
-                # Resumen de Métricas
                 m1, m2 = st.columns(2)
                 m1.metric("📦 Conteo Total Cajas", f"{total_cajas:,}")
                 m2.metric("🍾 Conteo Total Unidades (Botellas)", f"{total_unidades:,}")
                 
                 st.dataframe(df_r, use_container_width=True)
                 
-                # Generar Excel Individual con formato Coca-Cola/Inesco
                 excel_bytes = exportar_excel_inesco(df_r, nombre_ruta=nombre_ruta, fecha_str=fecha_detectada)
                 
                 s_key = re.sub(r'[^\w]', '_', nombre_ruta)
