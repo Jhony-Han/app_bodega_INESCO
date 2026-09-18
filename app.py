@@ -234,11 +234,10 @@ st.session_state.vencimientos = [
 ]
 
 # ---------------------------------------------------------
-# 3. EXPORTADOR MULTI-PESTAÑA (UN ARCHIVO, VARIAS RUTAS)
+# 3. EXPORTADOR MULTI-PESTAÑA (EXACTAMENTE RUTAS ML3E51, ML3E52, ML3E53)
 # ---------------------------------------------------------
 def exportar_excel_multiruta(rutas_dict, fecha_str):
     wb = Workbook()
-    # Eliminar la hoja por defecto que crea openpyxl
     default_sheet = wb.active
     
     blue_title_font = Font(color="003366", bold=True, size=14, name="Calibri")
@@ -270,14 +269,12 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
             
         num_cols = len(df_r.columns)
         
-        # Fila 1: Título
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(num_cols, 4))
         cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO")
         cell_t.font = blue_title_font
         cell_t.alignment = Alignment(horizontal="center", vertical="center")
         
-        # Fila 2: Subtítulo
-        subtitulo = f"Fecha de Entrega: {fecha_str} | Ruta / Carga: {nombre_ruta}"
+        subtitulo = f"Fecha de Entrega: {fecha_str} | Ruta: {nombre_ruta}"
         ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max(num_cols, 4))
         cell_s = ws.cell(row=2, column=1, value=subtitulo)
         cell_s.font = sub_font
@@ -287,7 +284,6 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
         ws.row_dimensions[2].height = 18
         ws.row_dimensions[3].height = 10
         
-        # Fila 4: Encabezados
         for col_idx, col_name in enumerate(df_r.columns, start=1):
             c = ws.cell(row=4, column=col_idx, value=col_name)
             c.fill = header_fill
@@ -295,7 +291,6 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
             c.alignment = Alignment(horizontal="center" if col_idx != 2 else "left", vertical="center")
         ws.row_dimensions[4].height = 22
         
-        # Filas de datos
         for row_idx, row_data in enumerate(df_r.values, start=5):
             val_first = str(row_data[0]).upper()
             is_total_row = ("TOTAL" in val_first or "SUBTOTAL" in val_first)
@@ -313,7 +308,6 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
                 else:
                     c.alignment = Alignment(horizontal="left", vertical="center")
                     
-        # Ancho automático de columnas
         for col_idx in range(1, num_cols + 1):
             col_letter = get_column_letter(col_idx)
             max_len = 0
@@ -386,7 +380,6 @@ with tab1:
         st.divider()
         df_venc_out = pd.DataFrame(st.session_state.vencimientos)[["SKU", "Descripción del Producto", "Fecha Vencimiento"]]
         
-        # Para vencimientos generamos un diccionario con una sola pestaña
         dict_venc = {"Vencimientos": df_venc_out}
         excel_bytes = exportar_excel_multiruta(dict_venc, fecha_str=date.today().strftime('%d/%m/%Y'))
         
@@ -433,15 +426,15 @@ with tab2:
             st.session_state.catalogo.pop(idx)
             st.rerun()
 
-# --- TAB 3: EXTRACCIÓN MULTI-RUTAS CON SUBTOTALES CALCULADOS Y PESTAÑAS EN UN SOLO EXCEL ---
+# --- TAB 3: EXTRACCIÓN FILTRADA EXCLUSIVAMENTE PARA ML3E51, ML3E52 Y ML3E53 ---
 with tab3:
-    st.markdown('<p class="sub-title">📄 Lectura de Planillas PDF (Rutas 51, 52, 53)</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">📄 Extracción de Rutas (ML3E51, ML3E52, ML3E53)</p>', unsafe_allow_html=True)
     
     uploaded_file = st.file_uploader("Cargar documento PDF con las planillas:", type=["pdf"])
     
     if uploaded_file:
         rutas_crudas = {}
-        ruta_actual = "Ruta Principal"
+        ruta_actual = None
         fecha_detectada = date.today().strftime('%d.%m.%Y')
         
         palabras_ignorar = ['REPARTIDOR', 'USUARIO', 'ESTATUS', 'TRANSPORTE', 'CAMION', 'CAMIÓN', 'ENTREGAS']
@@ -463,97 +456,99 @@ with tab3:
                         if match_f:
                             fecha_detectada = match_f.group(1)
                             
-                    # Detectar identificadores específicos ML3E51, ML3E52, ML3E53 o números de ruta
-                    match_r = re.search(r'(?:RUTA|CARGA|CARGUE)?[\s/:.-]*(ML3E5[1-3]|5[1-3])\b', line_clean, re.IGNORECASE)
-                    if match_r:
-                        ruta_actual = f"Ruta_{match_r.group(1).upper()}"
+                    # Detectar estrictamente ML3E51, ML3E52 o ML3E53 (o abreviados como 51, 52, 53 bajo ese contexto)
+                    match_r = re.search(r'\b(ML3E5[1-3]|5[1-3])\b', line_upper)
+                    if match_r and any(kw in line_upper for kw in ["RUTA", "CARGA", "CARGUE", "ML3E"]):
+                        r_code = match_r.group(1)
+                        if r_code in ["51", "ML3E51"]:
+                            ruta_actual = "ML3E51"
+                        elif r_code in ["52", "ML3E52"]:
+                            ruta_actual = "ML3E52"
+                        elif r_code in ["53", "ML3E53"]:
+                            ruta_actual = "ML3E53"
                         
-                    if ruta_actual not in rutas_crudas:
-                        rutas_crudas[ruta_actual] = []
+                        if ruta_actual and ruta_actual not in rutas_crudas:
+                            rutas_crudas[ruta_actual] = []
                         
-                    # Detección de filas con Cajas / Botellas (Slash)
-                    match_slash = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*/\s*(\d+)\s*$', line_clean)
-                    if match_slash:
-                        rutas_crudas[ruta_actual].append({
-                            "SKU (Material)": match_slash.group(1),
-                            "Descripción del Producto": match_slash.group(2).strip(),
-                            "Cajas": int(match_slash.group(3)),
-                            "Unidades": int(match_slash.group(4))
-                        })
-                        continue
+                    # Detección de ítems solo si estamos dentro de una de las 3 rutas válidas
+                    if ruta_actual:
+                        match_slash = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*/\s*(\d+)\s*$', line_clean)
+                        if match_slash:
+                            rutas_crudas[ruta_actual].append({
+                                "SKU (Material)": match_slash.group(1),
+                                "Descripción del Producto": match_slash.group(2).strip(),
+                                "Cajas": int(match_slash.group(3)),
+                                "Unidades": int(match_slash.group(4))
+                            })
+                            continue
 
-                    # Detección de filas con dos números
-                    match_dos_num = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s+(\d+)\s*$', line_clean)
-                    if match_dos_num:
-                        rutas_crudas[ruta_actual].append({
-                            "SKU (Material)": match_dos_num.group(1),
-                            "Descripción del Producto": match_dos_num.group(2).strip(),
-                            "Cajas": int(match_dos_num.group(3)),
-                            "Unidades": int(match_dos_num.group(4))
-                        })
-                        continue
+                        match_dos_num = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s+(\d+)\s*$', line_clean)
+                        if match_dos_num:
+                            rutas_crudas[ruta_actual].append({
+                                "SKU (Material)": match_dos_num.group(1),
+                                "Descripción del Producto": match_dos_num.group(2).strip(),
+                                "Cajas": int(match_dos_num.group(3)),
+                                "Unidades": int(match_dos_num.group(4))
+                            })
+                            continue
 
-                    # Detección de filas con un solo número (solo cajas)
-                    match_un_num = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*$', line_clean)
-                    if match_un_num:
-                        rutas_crudas[ruta_actual].append({
-                            "SKU (Material)": match_un_num.group(1),
-                            "Descripción del Producto": match_un_num.group(2).strip(),
-                            "Cajas": int(match_un_num.group(3)),
-                            "Unidades": 0
-                        })
+                        match_un_num = re.search(r'(\d{5,6})\s+(.+?)\s+(\d+)\s*$', line_clean)
+                        if match_un_num:
+                            rutas_crudas[ruta_actual].append({
+                                "SKU (Material)": match_un_num.group(1),
+                                "Descripción del Producto": match_un_num.group(2).strip(),
+                                "Cajas": int(match_un_num.group(3)),
+                                "Unidades": 0
+                            })
 
-        # Filtrar rutas vacías
         rutas_crudas = {k: v for k, v in rutas_crudas.items() if len(v) > 0}
 
         if rutas_crudas:
-            st.success(f"✅ Se procesaron {len(rutas_crudas)} ruta(s) correctamente.")
+            st.success(f"✅ Se identificaron y procesaron {len(rutas_crudas)} ruta(s) objetivo (ML3E51, ML3E52, ML3E53).")
             
-            # Diccionario final para el archivo Excel multi-pestaña
             excel_dict = {}
             
-            for nombre_ruta, items in rutas_crudas.items():
-                df_temp = pd.DataFrame(items)
-                
-                # Sumas calculadas matemáticamente (sin copiar texto del PDF)
-                sum_cajas = int(df_temp["Cajas"].sum())
-                sum_unidades = int(df_temp["Unidades"].sum())
-                
-                # Construir tabla final para mostrar y exportar
-                df_final = pd.DataFrame()
-                df_final["SKU (Material)"] = df_temp["SKU (Material)"]
-                df_final["Descripción del Producto"] = df_temp["Descripción del Producto"]
-                df_final["Cantidad (Cajas)"] = df_temp["Cajas"]
-                df_final["Cantidad (Unidades)"] = df_temp["Unidades"]
-                
-                # Agregar fila de Subtotal / Total calculado automáticamente
-                df_final.loc[len(df_final)] = {
-                    "SKU (Material)": "TOTALES",
-                    "Descripción del Producto": "SUMATORIA TOTAL CALCULADA",
-                    "Cantidad (Cajas)": sum_cajas,
-                    "Cantidad (Unidades)": sum_unidades
-                }
-                
-                titulo_vis = nombre_ruta.replace("_", " ")
-                excel_dict[titulo_vis] = df_final
-                
-                st.markdown(f"### 🚚 {titulo_vis}")
-                
-                m1, m2 = st.columns(2)
-                m1.metric("📦 Total Cajas Calculadas", f"{sum_cajas:,}")
-                m2.metric("🍾 Total Unidades (Botellas) Calculadas", f"{sum_unidades:,}")
-                
-                st.dataframe(df_final, use_container_width=True)
-                st.divider()
+            for nombre_ruta in ["ML3E51", "ML3E52", "ML3E53"]:
+                if nombre_ruta in rutas_crudas:
+                    items = rutas_crudas[nombre_ruta]
+                    df_temp = pd.DataFrame(items)
+                    
+                    sum_cajas = int(df_temp["Cajas"].sum())
+                    sum_unidades = int(df_temp["Unidades"].sum())
+                    
+                    df_final = pd.DataFrame()
+                    df_final["SKU (Material)"] = df_temp["SKU (Material)"]
+                    df_final["Descripción del Producto"] = df_temp["Descripción del Producto"]
+                    df_final["Cantidad (Cajas)"] = df_temp["Cajas"]
+                    df_final["Cantidad (Unidades)"] = df_temp["Unidades"]
+                    
+                    # Fila de totales calculados matemáticamente
+                    df_final.loc[len(df_final)] = {
+                        "SKU (Material)": "TOTALES",
+                        "Descripción del Producto": "SUMATORIA TOTAL CALCULADA",
+                        "Cantidad (Cajas)": sum_cajas,
+                        "Cantidad (Unidades)": sum_unidades
+                    }
+                    
+                    excel_dict[nombre_ruta] = df_final
+                    
+                    st.markdown(f"### 🚚 Ruta: {nombre_ruta}")
+                    
+                    m1, m2 = st.columns(2)
+                    m1.metric("📦 Total Cajas Calculadas", f"{sum_cajas:,}")
+                    m2.metric("🍾 Total Unidades (Botellas) Calculadas", f"{sum_unidades:,}")
+                    
+                    st.dataframe(df_final, use_container_width=True)
+                    st.divider()
 
-            # Generar el archivo Excel unificado con pestañas separadas
-            excel_bytes_multiruta = exportar_excel_multiruta(excel_dict, fecha_str=fecha_detectada)
-            
-            st.download_button(
-                label="📥 Descargar Archivo Excel Unificado (Con Pestañas por Ruta)",
-                data=excel_bytes_multiruta,
-                file_name=f"Planillas_Inesco_Rutas_{date.today()}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            if excel_dict:
+                excel_bytes_multiruta = exportar_excel_multiruta(excel_dict, fecha_str=fecha_detectada)
+                
+                st.download_button(
+                    label="📥 Descargar Excel Unificado (Pestañas ML3E51, ML3E52, ML3E53)",
+                    data=excel_bytes_multiruta,
+                    file_name=f"Planillas_Rutas_Inesco_{date.today()}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
         else:
-            st.warning("No se encontraron registros de productos legibles en las rutas objetivo.")
+            st.warning("⚠️ No se encontraron planillas correspondientes a las rutas ML3E51, ML3E52 o ML3E53 en el PDF cargado.")
