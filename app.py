@@ -3,6 +3,8 @@ import pandas as pd
 import pdfplumber
 import io
 import re
+import json
+import os
 from datetime import datetime, date
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -80,8 +82,26 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 2. CATÁLOGO COMPLETO DE SKUs
+# 2. ALMACENAMIENTO PERSISTENTE (LOCAL FILE JSON)
 # ---------------------------------------------------------
+DB_FILE = "vencimientos_inesco.json"
+
+def cargar_datos_persistentes():
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return []
+    return []
+
+def guardar_datos_persistentes(data):
+    with open(DB_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+if "vencimientos" not in st.session_state:
+    st.session_state.vencimientos = cargar_datos_persistentes()
+
 CATALOGO_INICIAL = [
     {"sku": "135718", "descripcion": "COCA-COLA 8 OZ VIR(30)"},
     {"sku": "135764", "descripcion": "COCA-COLA SA 8 OZ VIR(30)"},
@@ -224,15 +244,6 @@ CATALOGO_INICIAL = [
 if "catalogo" not in st.session_state:
     st.session_state.catalogo = CATALOGO_INICIAL
 
-if "vencimientos" not in st.session_state:
-    st.session_state.vencimientos = []
-
-ahora = datetime.now()
-st.session_state.vencimientos = [
-    reg for reg in st.session_state.vencimientos
-    if (ahora - datetime.strptime(reg["created_at"], "%Y-%m-%d %H:%M:%S")).total_seconds() < 3 * 86400
-]
-
 # ---------------------------------------------------------
 # 3. EXPORTADOR MULTI-PESTAÑA SEGURO
 # ---------------------------------------------------------
@@ -326,7 +337,7 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
 # ---------------------------------------------------------
 tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF (Rutas)"])
 
-# --- TAB 1: FECHAS DE VENCIMIENTO ---
+# --- TAB 1: FECHAS DE VENCIMIENTO (PERSISTENTES) ---
 with tab1:
     st.markdown('<p class="sub-title">➕ Agregar Registro de Vencimiento</p>', unsafe_allow_html=True)
     
@@ -356,12 +367,14 @@ with tab1:
                     "Fecha Vencimiento": f_venc.strftime("%d/%m/%Y"),
                     "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 })
-                st.success("✅ Registro guardado con éxito.")
+                st.success("✅ Registro guardado de forma permanente.")
+            
+            guardar_datos_persistentes(st.session_state.vencimientos)
             st.rerun()
         else:
             st.warning("⚠️ Debes seleccionar un SKU primero.")
 
-    st.markdown('<p class="sub-title">📋 Registros Guardados (Activos durante 3 días)</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">📋 Registros Guardados Permanentemente</p>', unsafe_allow_html=True)
     
     if st.session_state.vencimientos:
         for idx, row in enumerate(st.session_state.vencimientos):
@@ -375,7 +388,12 @@ with tab1:
             
             if col_d.button("❌ Borrar", key=f"del_{row['id']}"):
                 st.session_state.vencimientos.pop(idx)
+                guardar_datos_persistentes(st.session_state.vencimientos)
                 st.rerun()
+
+        if st.button("🔄 Guardar Cambios en Fechas Modificadas"):
+            guardar_datos_persistentes(st.session_state.vencimientos)
+            st.success("Cambios actualizados y guardados permanentemente.")
 
         st.divider()
         df_venc_out = pd.DataFrame(st.session_state.vencimientos)[["SKU", "Descripción del Producto", "Fecha Vencimiento"]]
@@ -395,7 +413,7 @@ with tab1:
             mensaje_wa = f"Reporte de Vencimientos Inesco - {date.today()}"
             st.markdown(f'[📲 Compartir por WhatsApp](https://api.whatsapp.com/send?text={mensaje_wa})')
     else:
-        st.info("No hay registros activos actualmente.")
+        st.info("No hay registros guardados todavía.")
 
 # --- TAB 2: ADMINISTRAR SKUS ---
 with tab2:
@@ -426,15 +444,15 @@ with tab2:
             st.session_state.catalogo.pop(idx)
             st.rerun()
 
-# --- TAB 3: LECTURA ROBUSTA Y CONTINUA (ML3E51, ML3E52, ML3E53) ---
+# --- TAB 3: EXTRACCIÓN PDF (RUTAS) ---
 with tab3:
-    st.markdown('<p class="sub-title">📄 Extracción Total sin Exclusiones (ML3E51, ML3E52, ML3E53)</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">📄 Extracción de Rutas (ML3E51, ML3E52, ML3E53)</p>', unsafe_allow_html=True)
     
     uploaded_file = st.file_uploader("Cargar documento PDF con las planillas:", type=["pdf"])
     
     if uploaded_file:
         rutas_crudas = {"ML3E51": [], "ML3E52": [], "ML3E53": []}
-        ruta_actual = "ML3E51"  # Ruta por defecto inicial si no hay corte explícito
+        ruta_actual = "ML3E51"
         fecha_detectada = date.today().strftime('%d.%m.%Y')
         
         palabras_ignorar = ['REPARTIDOR', 'USUARIO', 'ESTATUS', 'TRANSPORTE', 'CAMION', 'CAMIÓN', 'ENTREGAS', 'SUBTOTAL', 'TOTAL']
@@ -451,13 +469,11 @@ with tab3:
                     if not line_clean:
                         continue
                         
-                    # Detectar Fecha
                     if "FECHA" in line_upper:
                         match_f = re.search(r'(\d{2}[/.-]\d{2}[/.-]\d{4}|\d{4}[/.-]\d{2}[/.-]\d{2})', line_clean)
                         if match_f:
                             fecha_detectada = match_f.group(1)
                             
-                    # Detectar ruta activa de forma flexible
                     if "ML3E51" in line_upper or " 51" in line_upper and "RUTA" in line_upper:
                         ruta_actual = "ML3E51"
                         continue
@@ -468,11 +484,9 @@ with tab3:
                         ruta_actual = "ML3E53"
                         continue
                         
-                    # Ignorar cabeceras y totales estáticos
                     if any(p in line_upper for p in palabras_ignorar):
                         continue
                         
-                    # EXTRACCIÓN UNIVERSAL DE PRODUCTO: Buscar cualquier línea que empiece con código SKU (5 o 6 dígitos)
                     match_prod = re.search(r'^(\d{5,6})\s+(.+?)\s+(\d+)(?:\s*/\s*(\d+)|\s+(\d+))?\s*$', line_clean)
                     if match_prod:
                         sku = match_prod.group(1)
@@ -486,7 +500,6 @@ with tab3:
                         else:
                             unidades = 0
                             
-                        # Evitar duplicados por si se repite en saltos de página
                         if not any(d['SKU (Material)'] == sku for d in rutas_crudas[ruta_actual]):
                             rutas_crudas[ruta_actual].append({
                                 "SKU (Material)": sku,
@@ -495,7 +508,6 @@ with tab3:
                                 "Unidades": unidades
                             })
 
-        # Filtrar rutas vacías
         rutas_crudas = {k: v for k, v in rutas_crudas.items() if len(v) > 0}
 
         if rutas_crudas:
@@ -517,7 +529,6 @@ with tab3:
                     df_final["Cantidad (Cajas)"] = df_temp["Cajas"]
                     df_final["Cantidad (Unidades)"] = df_temp["Unidades"]
                     
-                    # Fila de totales calculados matemáticamente
                     df_final.loc[len(df_final)] = {
                         "SKU (Material)": "TOTALES",
                         "Descripción del Producto": "SUMATORIA TOTAL CALCULADA",
