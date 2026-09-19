@@ -81,7 +81,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 2. GESTIÓN DE DATOS EN SESIÓN CON RESPALDO SEGURO
+# 2. GESTIÓN DE DATOS EN SESIÓN
 # ---------------------------------------------------------
 if "vencimientos" not in st.session_state:
     st.session_state.vencimientos = []
@@ -321,12 +321,11 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
 # ---------------------------------------------------------
 tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF (Rutas)"])
 
-# --- TAB 1: FECHAS DE VENCIMIENTO CON RESPALDO NUBE ---
+# --- TAB 1: FECHAS DE VENCIMIENTO CON CARGA BLINDADA ---
 with tab1:
     st.markdown('<p class="sub-title">➕ Agregar Registro de Vencimiento</p>', unsafe_allow_html=True)
     
-    # Herramientas de respaldo rápido para la bodega
-    with st.expander("📂 Opciones de Respaldo (Guardar / Cargar en Celular)"):
+    with st.expander("📂 Opciones de Respaldo (Guardar / Cargar)"):
         if st.session_state.vencimientos:
             json_str = json.dumps(st.session_state.vencimientos, ensure_ascii=False, indent=4)
             st.download_button(
@@ -336,15 +335,20 @@ with tab1:
                 mime="application/json"
             )
         
-        uploaded_backup = st.file_uploader("📤 Subir Respaldo Previo (.json)", type=["json"])
+        # Carga blindada sin bucles infinitos
+        uploaded_backup = st.file_uploader("📤 Subir Respaldo Previo (.json)", type=["json"], key="uploader_backup")
         if uploaded_backup is not None:
             try:
-                data_recuperada = json.load(uploaded_backup)
-                st.session_state.vencimientos = data_recuperada
-                st.success("✅ ¡Datos restaurados exitosamente desde tu respaldo!")
-                st.rerun()
+                stringio = io.StringIO(uploaded_backup.getvalue().decode("utf-8"))
+                data_recuperada = json.load(stringio)
+                if isinstance(data_recuperada, list):
+                    st.session_state.vencimientos = data_recuperada
+                    st.success("✅ ¡Datos restaurados exitosamente!")
+                    st.rerun()
+                else:
+                    st.error("⚠️ El formato del archivo JSON no es válido.")
             except Exception as e:
-                st.error("⚠️ El archivo no es válido.")
+                st.error(f"⚠️ Error al leer el respaldo: {e}")
 
     skus_opt = [f"{item['sku']} - {item['descripcion']}" for item in st.session_state.catalogo]
     
@@ -446,7 +450,7 @@ with tab2:
 with tab3:
     st.markdown('<p class="sub-title">📄 Extracción de Rutas (ML3E51, ML3E52, ML3E53)</p>', unsafe_allow_html=True)
     
-    uploaded_file = st.file_uploader("Cargar documento PDF con las planillas:", type=["pdf"])
+    uploaded_file = st.file_uploader("Cargar documento PDF con las planillas:", type=["pdf"], key="uploader_pdf")
     
     if uploaded_file:
         rutas_crudas = {"ML3E51": [], "ML3E52": [], "ML3E53": []}
