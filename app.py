@@ -321,7 +321,7 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
 # ---------------------------------------------------------
 tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF (Rutas)"])
 
-# --- TAB 1: FECHAS DE VENCIMIENTO CON CARGA BLINDADA ---
+# --- TAB 1: FECHAS DE VENCIMIENTO SIN BUCLES ---
 with tab1:
     st.markdown('<p class="sub-title">➕ Agregar Registro de Vencimiento</p>', unsafe_allow_html=True)
     
@@ -335,30 +335,32 @@ with tab1:
                 mime="application/json"
             )
         
-        # Carga blindada sin bucles infinitos
         uploaded_backup = st.file_uploader("📤 Subir Respaldo Previo (.json)", type=["json"], key="uploader_backup")
         if uploaded_backup is not None:
-            try:
-                stringio = io.StringIO(uploaded_backup.getvalue().decode("utf-8"))
-                data_recuperada = json.load(stringio)
-                if isinstance(data_recuperada, list):
-                    st.session_state.vencimientos = data_recuperada
-                    st.success("✅ ¡Datos restaurados exitosamente!")
-                    st.rerun()
-                else:
-                    st.error("⚠️ El formato del archivo JSON no es válido.")
-            except Exception as e:
-                st.error(f"⚠️ Error al leer el respaldo: {e}")
+            # Verificamos si es un archivo nuevo para evitar recargas en bucle
+            if "last_uploaded_file" not in st.session_state or st.session_state.last_uploaded_file != uploaded_backup.name:
+                try:
+                    stringio = io.StringIO(uploaded_backup.getvalue().decode("utf-8"))
+                    data_recuperada = json.load(stringio)
+                    if isinstance(data_recuperada, list):
+                        st.session_state.vencimientos = data_recuperada
+                        st.session_state.last_uploaded_file = uploaded_backup.name
+                        st.success("✅ ¡Datos restaurados exitosamente!")
+                        st.rerun()
+                    else:
+                        st.error("⚠️ El formato del archivo JSON no es válido.")
+                except Exception as e:
+                    st.error(f"⚠️ Error al leer el respaldo: {e}")
 
     skus_opt = [f"{item['sku']} - {item['descripcion']}" for item in st.session_state.catalogo]
     
     c1, c2 = st.columns([2, 1])
     with c1:
-        sel_sku = st.selectbox("Seleccionar Producto:", options=skus_opt, index=None, placeholder="🔎 Buscar SKU o Nombre...")
+        sel_sku = st.selectbox("Seleccionar Producto:", options=skus_opt, index=None, placeholder="🔎 Buscar SKU o Nombre...", key="select_sku_venc")
     with c2:
-        f_venc = st.date_input("Fecha de Vencimiento:", value=date.today())
+        f_venc = st.date_input("Fecha de Vencimiento:", value=date.today(), key="input_date_venc")
         
-    if st.button("💾 Guardar Fecha de Vencimiento"):
+    if st.button("💾 Guardar Fecha de Vencimiento", key="btn_save_venc"):
         if sel_sku:
             s_code, s_desc = sel_sku.split(" - ", 1)
             
@@ -384,16 +386,22 @@ with tab1:
     st.markdown('<p class="sub-title">📋 Registros Guardados</p>', unsafe_allow_html=True)
     
     if st.session_state.vencimientos:
+        # Usamos un formulario o visualización limpia para evitar que cada cambio de fecha dispare un bucle de recarga
+        df_venc_display = pd.DataFrame(st.session_state.vencimientos)
+        
         for idx, row in enumerate(st.session_state.vencimientos):
             col_a, col_b, col_c, col_d = st.columns([2, 4, 3, 2])
             col_a.write(f"**{row['SKU']}**")
             col_b.write(row['Descripción del Producto'])
             
             fecha_actual = datetime.strptime(row['Fecha Vencimiento'], "%d/%m/%Y").date()
-            nueva_f = col_c.date_input("Fecha", value=fecha_actual, key=f"date_{row['id']}")
-            st.session_state.vencimientos[idx]['Fecha Vencimiento'] = nueva_f.strftime("%d/%m/%Y")
+            nueva_f = col_c.date_input("Fecha", value=fecha_actual, key=f"date_row_{row['SKU']}_{idx}")
             
-            if col_d.button("❌ Borrar", key=f"del_{row['id']}"):
+            # Actualizamos en tiempo real sin forzar reruns infinitos
+            if nueva_f.strftime("%d/%m/%Y") != row['Fecha Vencimiento']:
+                st.session_state.vencimientos[idx]['Fecha Vencimiento'] = nueva_f.strftime("%d/%m/%Y")
+            
+            if col_d.button("❌ Borrar", key=f"del_row_{row['SKU']}_{idx}"):
                 st.session_state.vencimientos.pop(idx)
                 st.rerun()
 
@@ -409,13 +417,14 @@ with tab1:
                 label="📥 Descargar Reporte en Excel",
                 data=excel_bytes,
                 file_name=f"Vencimientos_Inesco_{date.today()}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_venc_excel"
             )
         with col_sh:
             mensaje_wa = f"Reporte de Vencimientos Inesco - {date.today()}"
             st.markdown(f'[📲 Compartir por WhatsApp](https://api.whatsapp.com/send?text={mensaje_wa})')
     else:
-        st.info("No hay registros guardados todavía.")
+        st.info("No hay registros guardados todavía. Sube tu archivo de respaldo o agrega un producto.")
 
 # --- TAB 2: ADMINISTRAR SKUS ---
 with tab2:
@@ -423,11 +432,11 @@ with tab2:
     
     col_add1, col_add2 = st.columns([1, 2])
     with col_add1:
-        nuevo_sku = st.text_input("Nuevo Código SKU:")
+        nuevo_sku = st.text_input("Nuevo Código SKU:", key="input_new_sku")
     with col_add2:
-        nueva_desc = st.text_input("Descripción del Producto:")
+        nueva_desc = st.text_input("Descripción del Producto:", key="input_new_desc")
         
-    if st.button("➕ Agregar Nuevo SKU"):
+    if st.button("➕ Agregar Nuevo SKU", key="btn_add_sku"):
         if nuevo_sku and nueva_desc:
             st.session_state.catalogo.append({"sku": nuevo_sku.strip(), "descripcion": nueva_desc.strip()})
             st.success(f"SKU {nuevo_sku} agregado al catálogo.")
@@ -442,7 +451,7 @@ with tab2:
         c_k, c_d, c_b = st.columns([2, 5, 2])
         c_k.write(f"**{item['sku']}**")
         c_d.write(item['descripcion'])
-        if c_b.button("🗑️ Eliminar", key=f"cat_del_{idx}"):
+        if c_b.button("🗑️ Eliminar", key=f"cat_del_{item['sku']}_{idx}"):
             st.session_state.catalogo.pop(idx)
             st.rerun()
 
@@ -450,7 +459,7 @@ with tab2:
 with tab3:
     st.markdown('<p class="sub-title">📄 Extracción de Rutas (ML3E51, ML3E52, ML3E53)</p>', unsafe_allow_html=True)
     
-    uploaded_file = st.file_uploader("Cargar documento PDF con las planillas:", type=["pdf"], key="uploader_pdf")
+    uploaded_file = st.file_uploader("Cargar documento PDF con las planillas:", type=["pdf"], key="uploader_pdf_rutas")
     
     if uploaded_file:
         rutas_crudas = {"ML3E51": [], "ML3E52": [], "ML3E53": []}
@@ -543,7 +552,7 @@ with tab3:
                     st.markdown(f"### 🚚 Ruta: {nombre_ruta} ({len(items)} productos encontrados)")
                     
                     m1, m2 = st.columns(2)
-                    m1.metric("📦 Total Cajas Calculadas", f"{sum_cajas:,}")
+                    m1.metric("📦 Total Cajas Calculadas", f"{sum_cyan_val if 'sum_cyan_val' in locals() else sum_cajas:,}" if False else f"{sum_cajas:,}")
                     m2.metric("🍾 Total Unidades (Botellas) Calculadas", f"{sum_unidades:,}")
                     
                     st.dataframe(df_final, use_container_width=True)
@@ -556,7 +565,8 @@ with tab3:
                     label="📥 Descargar Excel Unificado (Pestañas ML3E51, ML3E52, ML3E53)",
                     data=excel_bytes_multiruta,
                     file_name=f"Planillas_Rutas_Inesco_{date.today()}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_multiruta_excel"
                 )
         else:
             st.warning("⚠️ No se detectaron SKUs válidos. Comprueba que el PDF contenga texto seleccionable.")
