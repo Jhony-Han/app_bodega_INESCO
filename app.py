@@ -10,7 +10,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 # ---------------------------------------------------------
-# 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS CON FONDO OSCURO Y LOGO
+# 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS (DISEÑO CLÁSICO INESCO)
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Inesco | Gestión y Extracción",
@@ -21,28 +21,26 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-    .inesco-header {
-        background: linear-gradient(135deg, #1E1E1E 0%, #2D2D2D 100%);
+    .cocacola-header {
+        background: linear-gradient(135deg, #E41E2B 0%, #B3000C 100%);
         padding: 20px;
         border-radius: 15px;
         text-align: center;
         color: white;
         margin-bottom: 20px;
-        border: 2px solid #E41E2B;
-        box-shadow: 0px 6px 15px rgba(0, 0, 0, 0.5);
+        box-shadow: 0px 6px 15px rgba(228, 30, 43, 0.4);
     }
-    .inesco-header h1 { 
-        color: #FFFFFF !important; 
-        margin: 10px 0 0 0; 
+    .cocacola-header h1 { 
+        color: white !important; 
+        margin: 0; 
         font-weight: 800; 
-        font-size: 1.7rem;
+        font-size: 1.8rem;
         letter-spacing: 1px;
     }
-    .inesco-header p { 
-        color: #FF8A8A !important; 
+    .cocacola-header p { 
+        color: #FFEBEE !important; 
         margin: 5px 0 0 0; 
         font-size: 0.95rem; 
-        font-weight: 600;
     }
     .sub-title {
         color: #E41E2B; 
@@ -64,25 +62,19 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Encabezado visual con el Logo real, el vaso y el camioncito
+# Encabezado clásico con el diseño original y legible
 col_h1, col_h2, col_h3 = st.columns([1, 6, 1])
 with col_h1:
-    st.markdown("<h1 style='text-align: center; font-size: 2.5rem; margin-top: 30px;'>🥤</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; font-size: 2.5rem; margin-top: 20px;'>🥤</h1>", unsafe_allow_html=True)
 with col_h2:
     st.markdown("""
-        <div class="inesco-header">
-    """, unsafe_allow_html=True)
-    
-    # URL directa de tu logo para asegurar que cargue de forma perfecta
-    st.image("https://i.imgur.com/83NqZ9W.png", width=220)
-    
-    st.markdown("""
+        <div class="cocacola-header">
             <h1>DISTRIBUCIONES INESCO</h1>
             <p>Gestión de Inventario, Vencimientos y Extracción por Rutas</p>
         </div>
     """, unsafe_allow_html=True)
 with col_h3:
-    st.markdown("<h1 style='text-align: center; font-size: 2.5rem; margin-top: 30px;'>🚚</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center; font-size: 2.5rem; margin-top: 20px;'>🚚</h1>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
 # 2. GESTIÓN DE DATOS EN SESIÓN Y CATÁLOGO PERSISTENTE
@@ -93,8 +85,8 @@ if "vencimientos" not in st.session_state:
 if "modo_captura" not in st.session_state:
     st.session_state.modo_captura = "Tomar datos con voz"
 
-if "voz_texto_capturado" not in st.session_state:
-    st.session_state.voz_texto_capturado = ""
+if "voz_temp_input" not in st.session_state:
+    st.session_state.voz_temp_input = ""
 
 CATALOGO_INICIAL = [
     {"sku": "135718", "descripcion": "COCA-COLA 8 OZ VIR(30)"},
@@ -307,7 +299,7 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
 # ---------------------------------------------------------
 tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF (Rutas)"])
 
-# --- TAB 1: FECHAS DE VENCIMIENTO CON AUDIO NATIVO Y MODO MANUAL ---
+# --- TAB 1: FECHAS DE VENCIMIENTO ---
 with tab1:
     st.markdown('<p class="sub-title">➕ Agregar Registro de Vencimiento</p>', unsafe_allow_html=True)
     
@@ -345,7 +337,7 @@ with tab1:
                 except Exception as e:
                     st.error(f"⚠️ Error al leer el respaldo: {e}")
 
-    # Selector de Modo interactivo
+    # Selector de Modo interactivo (Voz vs Manual)
     st.session_state.modo_captura = st.selectbox(
         "🎛️ Selecciona el método de entrada de datos:",
         ["Tomar datos con voz", "Tomar datos manual"],
@@ -355,21 +347,16 @@ with tab1:
 
     skus_opt = [f"{item['sku']} - {item['descripcion']}" for item in st.session_state.catalogo]
 
-    # Interfaz según el método elegido
+    # Interfaz según el modo elegido
     if st.session_state.modo_captura == "Tomar datos con voz":
         st.markdown("""
-            <div style="background-color: #262626; padding: 12px; border-radius: 8px; border-left: 5px solid #E41E2B; margin-bottom: 15px; color: #FFF;">
-                <strong>🎙️ Grabación de Audio por Micrófono:</strong> Haz clic en el botón de grabar abajo, di el nombre o parte del producto, y escribe o busca el resultado filtrado.
+            <div style="background-color: #F8D7DA; padding: 10px; border-radius: 8px; border-left: 5px solid #E41E2B; margin-bottom: 15px; color: #721C24;">
+                <strong>🎙️ Modo Dictado / Búsqueda Rápida:</strong> Usa el icono de micrófono del teclado de tu celular o PC, o escribe el nombre del producto (ej: <em>Coca-Cola 350</em>) para filtrar y autocompletar el SKU al instante.
             </div>
         """, unsafe_allow_html=True)
         
-        # Componente oficial de Streamlit para activar el micrófono real del dispositivo
-        audio_file = st.audio_input("🎤 Toca para grabar tu voz:")
-        if audio_file is not None:
-            st.success("✅ ¡Audio grabado correctamente! (Usa el filtro inferior para buscar tu producto basado en lo que dictaste).")
-
-        filtro_voz = st.text_input("🔍 Escribe una palabra clave de lo que dictaste para filtrar:", value=st.session_state.voz_texto_capturado, placeholder="Ej: Coca-Cola, Brisa, Quatro...", key="input_filtro_voz")
-        st.session_state.voz_texto_capturado = filtro_voz
+        filtro_voz = st.text_input("🎤 Dicta o escribe el producto:", value=st.session_state.voz_temp_input, placeholder="Ej: Coca-Cola 350, Brisa, Quatro...", key="input_voz_busqueda")
+        st.session_state.voz_temp_input = filtro_voz
 
         if filtro_voz:
             skus_filtrados = [s for s in skus_opt if filtro_voz.lower() in s.lower()]
@@ -377,7 +364,7 @@ with tab1:
             skus_filtrados = skus_opt
     else:
         st.markdown("""
-            <div style="background-color: #262626; padding: 12px; border-radius: 8px; border-left: 5px solid #00ADB5; margin-bottom: 15px; color: #FFF;">
+            <div style="background-color: #D1ECF1; padding: 10px; border-radius: 8px; border-left: 5px solid #0C5460; margin-bottom: 15px; color: #0C5460;">
                 <strong>⌨️ Modo Manual Activo:</strong> Selecciona el producto directamente de la lista desplegable.
             </div>
         """, unsafe_allow_html=True)
@@ -385,7 +372,7 @@ with tab1:
 
     c1, c2 = st.columns([2, 1])
     with c1:
-        sel_sku = st.selectbox("Seleccionar Producto:", options=skus_filtrados, index=None, placeholder="🔎 Buscar SKU o Nombre...", key="select_sku_venc")
+        sel_sku = st.selectbox("Seleccionar Producto:", options=skus_filtrados, index=0 if len(skus_filtrados) == 1 else None, placeholder="🔎 Buscar SKU o Nombre...", key="select_sku_venc")
     with c2:
         f_venc = st.date_input("Fecha de Vencimiento:", value=date.today(), key="input_date_venc")
         
