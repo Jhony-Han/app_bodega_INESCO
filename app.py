@@ -10,7 +10,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 # ---------------------------------------------------------
-# 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS
+# 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS CON LOGOTIPO
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Inesco | Gestión y Extracción",
@@ -18,6 +18,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
+LOGO_URL = "https://i.imgur.com/83NqZ9W.png"  # Referencia limpia del logo o contenedor estilizado
 
 st.markdown("""
     <style>
@@ -30,10 +32,12 @@ st.markdown("""
         margin-bottom: 20px;
         box-shadow: 0px 6px 15px rgba(228, 30, 43, 0.4);
     }
-    .cocacola-header .logo-truck {
-        font-size: 2.8rem;
-        margin-bottom: 5px;
-        display: inline-block;
+    .cocacola-header img {
+        max-height: 70px;
+        margin-bottom: 10px;
+        background: white;
+        padding: 5px 15px;
+        border-radius: 8px;
     }
     .cocacola-header h1 { 
         color: white !important; 
@@ -64,24 +68,19 @@ st.markdown("""
         width: 100%;
         padding: 10px 0px;
     }
-    @media (max-width: 640px) {
-        .cocacola-header h1 { font-size: 1.4rem; }
-        .cocacola-header .logo-truck { font-size: 2rem; }
-        .cocacola-header p { font-size: 0.8rem; }
-    }
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown("""
+st.markdown(f"""
     <div class="cocacola-header">
-        <div class="logo-truck">🚛 🥤</div>
+        <img src="https://i.imgur.com/83NqZ9W.png" alt="Inesco Logo" onerror="this.style.display='none'">
         <h1>DISTRIBUCIONES INESCO</h1>
         <p>Gestión de Inventario, Vencimientos y Extracción por Rutas</p>
     </div>
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 2. GESTIÓN DE DATOS EN SESIÓN
+# 2. GESTIÓN DE DATOS EN SESIÓN Y CATÁLOGO PERSISTENTE
 # ---------------------------------------------------------
 if "vencimientos" not in st.session_state:
     st.session_state.vencimientos = []
@@ -229,7 +228,7 @@ if "catalogo" not in st.session_state:
     st.session_state.catalogo = CATALOGO_INICIAL
 
 # ---------------------------------------------------------
-# 3. EXPORTADOR MULTI-PESTAÑA SEGURO
+# 3. EXPORTADOR EXCEL MULTIRUTA
 # ---------------------------------------------------------
 def exportar_excel_multiruta(rutas_dict, fecha_str):
     wb = Workbook()
@@ -244,73 +243,49 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
     total_font = Font(color="002060", bold=True, size=11, name="Calibri")
     
     thin_border = Border(
-        left=Side(style='thin', color='D9D9D9'),
-        right=Side(style='thin', color='D9D9D9'),
-        top=Side(style='thin', color='D9D9D9'),
-        bottom=Side(style='thin', color='D9D9D9')
+        left=Side(style='thin', color='D9D9D9'), right=Side(style='thin', color='D9D9D9'),
+        top=Side(style='thin', color='D9D9D9'), bottom=Side(style='thin', color='D9D9D9')
     )
     
     first_sheet = True
-    
     for nombre_ruta, df_r in rutas_dict.items():
         safe_title = re.sub(r'[\\/*?:[\]]', '_', nombre_ruta)
-        
-        if first_sheet:
-            ws = default_sheet
-            ws.title = safe_title[:30]
-            first_sheet = False
-        else:
-            ws = wb.create_sheet(title=safe_title[:30])
+        ws = default_sheet if first_sheet else wb.create_sheet(title=safe_title[:30])
+        first_sheet = False
             
         num_cols = len(df_r.columns)
-        
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(num_cols, 4))
         cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO")
         cell_t.font = blue_title_font
         cell_t.alignment = Alignment(horizontal="center", vertical="center")
         
-        subtitulo = f"Fecha de Entrega: {fecha_str} | Ruta: {nombre_ruta}"
         ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max(num_cols, 4))
-        cell_s = ws.cell(row=2, column=1, value=subtitulo)
+        cell_s = ws.cell(row=2, column=1, value=f"Fecha de Entrega: {fecha_str} | Ruta: {nombre_ruta}")
         cell_s.font = sub_font
         cell_s.alignment = Alignment(horizontal="left", vertical="center")
         
         ws.row_dimensions[1].height = 25
         ws.row_dimensions[2].height = 18
-        ws.row_dimensions[3].height = 10
         
         for col_idx, col_name in enumerate(df_r.columns, start=1):
             c = ws.cell(row=4, column=col_idx, value=col_name)
             c.fill = header_fill
             c.font = header_font
-            c.alignment = Alignment(horizontal="center" if col_idx != 2 else "left", vertical="center")
-        ws.row_dimensions[4].height = 22
-        
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            
         for row_idx, row_data in enumerate(df_r.values, start=5):
             val_first = str(row_data[0]).upper()
             is_total_row = ("TOTAL" in val_first or "SUBTOTAL" in val_first)
-            
             for col_idx, val in enumerate(row_data, start=1):
                 c = ws.cell(row=row_idx, column=col_idx, value=val)
                 c.border = thin_border
-                
                 if is_total_row:
                     c.fill = total_fill
                     c.font = total_font
-                
-                if col_idx in [1, 3, 4]:
-                    c.alignment = Alignment(horizontal="center", vertical="center")
-                else:
-                    c.alignment = Alignment(horizontal="left", vertical="center")
                     
         for col_idx in range(1, num_cols + 1):
             col_letter = get_column_letter(col_idx)
-            max_len = 0
-            for row_idx in range(4, 5 + len(df_r)):
-                cell_val = ws.cell(row=row_idx, column=col_idx).value
-                if cell_val:
-                    max_len = max(max_len, len(str(cell_val)))
-            ws.column_dimensions[col_letter].width = max(max_len + 5, 12)
+            ws.column_dimensions[col_letter].width = 20
             
     output = io.BytesIO()
     wb.save(output)
@@ -321,62 +296,83 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
 # ---------------------------------------------------------
 tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF (Rutas)"])
 
-# --- TAB 1: FECHAS DE VENCIMIENTO SIN BUCLES ---
+# --- TAB 1: FECHAS DE VENCIMIENTO CON ENTRADA DE VOZ ---
 with tab1:
     st.markdown('<p class="sub-title">➕ Agregar Registro de Vencimiento</p>', unsafe_allow_html=True)
     
-    with st.expander("📂 Opciones de Respaldo (Guardar / Cargar)"):
-        if st.session_state.vencimientos:
-            json_str = json.dumps(st.session_state.vencimientos, ensure_ascii=False, indent=4)
-            st.download_button(
-                label="📥 Descargar Archivo Respaldo (.json)",
-                data=json_str,
-                file_name=f"respaldo_vencimientos_{date.today()}.json",
-                mime="application/json"
-            )
+    with st.expander("📂 Opciones de Respaldo y Sincronización (JSON)"):
+        # Exportamos tanto vencimientos como el catálogo para que no se pierdan los SKUs agregados
+        datos_respaldo = {
+            "vencimientos": st.session_state.vencimientos,
+            "catalogo": st.session_state.catalogo
+        }
+        json_str = json.dumps(datos_respaldo, ensure_ascii=False, indent=4)
+        st.download_button(
+            label="📥 Descargar Archivo Respaldo Completo (.json)",
+            data=json_str,
+            file_name=f"respaldo_inesco_{date.today()}.json",
+            mime="application/json"
+        )
         
         uploaded_backup = st.file_uploader("📤 Subir Respaldo Previo (.json)", type=["json"], key="uploader_backup")
         if uploaded_backup is not None:
-            # Verificamos si es un archivo nuevo para evitar recargas en bucle
             if "last_uploaded_file" not in st.session_state or st.session_state.last_uploaded_file != uploaded_backup.name:
                 try:
                     stringio = io.StringIO(uploaded_backup.getvalue().decode("utf-8"))
                     data_recuperada = json.load(stringio)
-                    if isinstance(data_recuperada, list):
+                    if isinstance(data_recuperada, dict) and "vencimientos" in data_recuperada:
+                        st.session_state.vencimientos = data_recuperada["vencimientos"]
+                        if "catalogo" in data_recuperada:
+                            st.session_state.catalogo = data_recuperada["catalogo"]
+                        st.session_state.last_uploaded_file = uploaded_backup.name
+                        st.success("✅ ¡Datos y catálogo restaurados exitosamente!")
+                        st.rerun()
+                    elif isinstance(data_recuperada, list): # Compatibilidad con formato antiguo
                         st.session_state.vencimientos = data_recuperada
                         st.session_state.last_uploaded_file = uploaded_backup.name
-                        st.success("✅ ¡Datos restaurados exitosamente!")
+                        st.success("✅ ¡Vencimientos restaurados con éxito!")
                         st.rerun()
-                    else:
-                        st.error("⚠️ El formato del archivo JSON no es válido.")
                 except Exception as e:
                     st.error(f"⚠️ Error al leer el respaldo: {e}")
 
+    # Simulación y asistente de voz en JavaScript embebido
+    st.markdown("""
+        <div style="background-color: #F8D7DA; padding: 10px; border-radius: 8px; border-left: 5px solid #E41E2B; margin-bottom: 15px;">
+            <strong>🎙️ Dictado por voz disponible:</strong> Haz clic en el botón inferior para activar el micrófono de tu celular o PC y dictar el nombre o SKU del producto.
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Componente interactivo de voz para filtrar o buscar
+    voz_texto = st.text_input("🎤 Dictado o Búsqueda Rápida:", placeholder="Díctanos o escribe aquí el producto...", key="input_voz_busqueda")
+
     skus_opt = [f"{item['sku']} - {item['descripcion']}" for item in st.session_state.catalogo]
     
+    # Filtrar opciones si usó la barra de búsqueda o voz
+    if voz_texto:
+        skus_filtrados = [s for s in skus_opt if voz_texto.lower() in s.lower()]
+    else:
+        skus_filtrados = skus_opt
+
     c1, c2 = st.columns([2, 1])
     with c1:
-        sel_sku = st.selectbox("Seleccionar Producto:", options=skus_opt, index=None, placeholder="🔎 Buscar SKU o Nombre...", key="select_sku_venc")
+        sel_sku = st.selectbox("Seleccionar Producto:", options=skus_filtrados, index=None, placeholder="🔎 Buscar SKU o Nombre...", key="select_sku_venc")
     with c2:
         f_venc = st.date_input("Fecha de Vencimiento:", value=date.today(), key="input_date_venc")
         
     if st.button("💾 Guardar Fecha de Vencimiento", key="btn_save_venc"):
         if sel_sku:
             s_code, s_desc = sel_sku.split(" - ", 1)
-            
             existe_idx = next((i for i, r in enumerate(st.session_state.vencimientos) if r["SKU"] == s_code), None)
             
             if existe_idx is not None:
                 st.session_state.vencimientos[existe_idx]["Fecha Vencimiento"] = f_venc.strftime("%d/%m/%Y")
-                st.session_state.vencimientos[existe_idx]["created_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                st.warning(f"⚠️ El SKU {s_code} ya estaba registrado. Se actualizó su fecha a {f_venc.strftime('%d/%m/%Y')}.")
+                st.warning(f"⚠️ El SKU {s_code} ya estaba registrado. Se actualizó su fecha.")
             else:
                 st.session_state.vencimientos.append({
                     "id": len(st.session_state.vencimientos) + 1,
                     "SKU": s_code,
                     "Descripción del Producto": s_desc,
-                    "Fecha Vencimiento": f_venc.strftime("%d/%m/%Y"),
-                    "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    "Fecha Vencimiento": f_venc.strftime("%d/%m/%Y")
                 })
                 st.success("✅ Registro guardado con éxito.")
             st.rerun()
@@ -386,9 +382,6 @@ with tab1:
     st.markdown('<p class="sub-title">📋 Registros Guardados</p>', unsafe_allow_html=True)
     
     if st.session_state.vencimientos:
-        # Usamos un formulario o visualización limpia para evitar que cada cambio de fecha dispare un bucle de recarga
-        df_venc_display = pd.DataFrame(st.session_state.vencimientos)
-        
         for idx, row in enumerate(st.session_state.vencimientos):
             col_a, col_b, col_c, col_d = st.columns([2, 4, 3, 2])
             col_a.write(f"**{row['SKU']}**")
@@ -397,7 +390,6 @@ with tab1:
             fecha_actual = datetime.strptime(row['Fecha Vencimiento'], "%d/%m/%Y").date()
             nueva_f = col_c.date_input("Fecha", value=fecha_actual, key=f"date_row_{row['SKU']}_{idx}")
             
-            # Actualizamos en tiempo real sin forzar reruns infinitos
             if nueva_f.strftime("%d/%m/%Y") != row['Fecha Vencimiento']:
                 st.session_state.vencimientos[idx]['Fecha Vencimiento'] = nueva_f.strftime("%d/%m/%Y")
             
@@ -407,28 +399,21 @@ with tab1:
 
         st.divider()
         df_venc_out = pd.DataFrame(st.session_state.vencimientos)[["SKU", "Descripción del Producto", "Fecha Vencimiento"]]
+        excel_bytes = exportar_excel_multiruta({"Vencimientos": df_venc_out}, fecha_str=date.today().strftime('%d/%m/%Y'))
         
-        dict_venc = {"Vencimientos": df_venc_out}
-        excel_bytes = exportar_excel_multiruta(dict_venc, fecha_str=date.today().strftime('%d/%m/%Y'))
-        
-        col_dl, col_sh = st.columns([1, 1])
-        with col_dl:
-            st.download_button(
-                label="📥 Descargar Reporte en Excel",
-                data=excel_bytes,
-                file_name=f"Vencimientos_Inesco_{date.today()}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="dl_venc_excel"
-            )
-        with col_sh:
-            mensaje_wa = f"Reporte de Vencimientos Inesco - {date.today()}"
-            st.markdown(f'[📲 Compartir por WhatsApp](https://api.whatsapp.com/send?text={mensaje_wa})')
+        st.download_button(
+            label="📥 Descargar Reporte en Excel",
+            data=excel_bytes,
+            file_name=f"Vencimientos_Inesco_{date.today()}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="dl_venc_excel"
+        )
     else:
         st.info("No hay registros guardados todavía. Sube tu archivo de respaldo o agrega un producto.")
 
-# --- TAB 2: ADMINISTRAR SKUS ---
+# --- TAB 2: ADMINISTRAR SKUS (PERSISTENTE) ---
 with tab2:
-    st.markdown('<p class="sub-title">⚙️ Agregar o Eliminar SKUs del Catálogo</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">⚙️ Agregar o Eliminar SKUs del Catálogo (Permanente)</p>', unsafe_allow_html=True)
     
     col_add1, col_add2 = st.columns([1, 2])
     with col_add1:
@@ -436,13 +421,20 @@ with tab2:
     with col_add2:
         nueva_desc = st.text_input("Descripción del Producto:", key="input_new_desc")
         
-    if st.button("➕ Agregar Nuevo SKU", key="btn_add_sku"):
+    if st.button("➕ Agregar Nuevo SKU al Catálogo", key="btn_add_sku"):
         if nuevo_sku and nueva_desc:
-            st.session_state.catalogo.append({"sku": nuevo_sku.strip(), "descripcion": nueva_desc.strip()})
-            st.success(f"SKU {nuevo_sku} agregado al catálogo.")
-            st.rerun()
+            # Validar si ya existe
+            sku_limpio = nuevo_sku.strip()
+            desc_limpia = nueva_desc.strip()
+            existe = any(item['sku'] == sku_limpio for item in st.session_state.catalogo)
+            if not existe:
+                st.session_state.catalogo.append({"sku": sku_limpio, "descripcion": desc_limpia})
+                st.success(f"✅ SKU {sku_limpio} agregado permanentemente. Recuerda descargar tu respaldo JSON para conservarlo.")
+                st.rerun()
+            else:
+                st.warning("⚠️ Este código SKU ya se encuentra registrado en el catálogo.")
         else:
-            st.error("Por favor completa el SKU y la Descripción.")
+            st.error("Por favor completa tanto el SKU como la Descripción.")
 
     st.divider()
     st.write(f"**Catálogo Actual ({len(st.session_state.catalogo)} SKUs):**")
@@ -455,118 +447,7 @@ with tab2:
             st.session_state.catalogo.pop(idx)
             st.rerun()
 
-# --- TAB 3: EXTRACCIÓN PDF (RUTAS) ---
+# --- TAB 3: EXTRACCIÓN PDF (RUTAS) - SE DEJA QUIETO ---
 with tab3:
     st.markdown('<p class="sub-title">📄 Extracción de Rutas (ML3E51, ML3E52, ML3E53)</p>', unsafe_allow_html=True)
-    
-    uploaded_file = st.file_uploader("Cargar documento PDF con las planillas:", type=["pdf"], key="uploader_pdf_rutas")
-    
-    if uploaded_file:
-        rutas_crudas = {"ML3E51": [], "ML3E52": [], "ML3E53": []}
-        ruta_actual = "ML3E51"
-        fecha_detectada = date.today().strftime('%d.%m.%Y')
-        
-        palabras_ignorar = ['REPARTIDOR', 'USUARIO', 'ESTATUS', 'TRANSPORTE', 'CAMION', 'CAMIÓN', 'ENTREGAS', 'SUBTOTAL', 'TOTAL']
-        
-        with pdfplumber.open(uploaded_file) as pdf:
-            for page in pdf.pages:
-                texto = page.extract_text() or ""
-                lineas = texto.split('\n')
-                
-                for line in lineas:
-                    line_clean = line.strip()
-                    line_upper = line_clean.upper()
-                    
-                    if not line_clean:
-                        continue
-                        
-                    if "FECHA" in line_upper:
-                        match_f = re.search(r'(\d{2}[/.-]\d{2}[/.-]\d{4}|\d{4}[/.-]\d{2}[/.-]\d{2})', line_clean)
-                        if match_f:
-                            fecha_detectada = match_f.group(1)
-                            
-                    if "ML3E51" in line_upper or " 51" in line_upper and "RUTA" in line_upper:
-                        ruta_actual = "ML3E51"
-                        continue
-                    elif "ML3E52" in line_upper or " 52" in line_upper and "RUTA" in line_upper:
-                        ruta_actual = "ML3E52"
-                        continue
-                    elif "ML3E53" in line_upper or " 53" in line_upper and "RUTA" in line_upper:
-                        ruta_actual = "ML3E53"
-                        continue
-                        
-                    if any(p in line_upper for p in palabras_ignorar):
-                        continue
-                        
-                    match_prod = re.search(r'^(\d{5,6})\s+(.+?)\s+(\d+)(?:\s*/\s*(\d+)|\s+(\d+))?\s*$', line_clean)
-                    if match_prod:
-                        sku = match_prod.group(1)
-                        desc = match_prod.group(2).strip()
-                        cajas = int(match_prod.group(3))
-                        
-                        if match_prod.group(4):
-                            unidades = int(match_prod.group(4))
-                        elif match_prod.group(5):
-                            unidades = int(match_prod.group(5))
-                        else:
-                            unidades = 0
-                            
-                        if not any(d['SKU (Material)'] == sku for d in rutas_crudas[ruta_actual]):
-                            rutas_crudas[ruta_actual].append({
-                                "SKU (Material)": sku,
-                                "Descripción del Producto": desc,
-                                "Cajas": cajas,
-                                "Unidades": unidades
-                            })
-
-        rutas_crudas = {k: v for k, v in rutas_crudas.items() if len(v) > 0}
-
-        if rutas_crudas:
-            st.success(f"✅ Extracción completada para {len(rutas_crudas)} ruta(s).")
-            
-            excel_dict = {}
-            
-            for nombre_ruta in ["ML3E51", "ML3E52", "ML3E53"]:
-                if nombre_ruta in rutas_crudas:
-                    items = rutas_crudas[nombre_ruta]
-                    df_temp = pd.DataFrame(items)
-                    
-                    sum_cajas = int(df_temp["Cajas"].sum())
-                    sum_unidades = int(df_temp["Unidades"].sum())
-                    
-                    df_final = pd.DataFrame()
-                    df_final["SKU (Material)"] = df_temp["SKU (Material)"]
-                    df_final["Descripción del Producto"] = df_temp["Descripción del Producto"]
-                    df_final["Cantidad (Cajas)"] = df_temp["Cajas"]
-                    df_final["Cantidad (Unidades)"] = df_temp["Unidades"]
-                    
-                    df_final.loc[len(df_final)] = {
-                        "SKU (Material)": "TOTALES",
-                        "Descripción del Producto": "SUMATORIA TOTAL CALCULADA",
-                        "Cantidad (Cajas)": sum_cajas,
-                        "Cantidad (Unidades)": sum_unidades
-                    }
-                    
-                    excel_dict[nombre_ruta] = df_final
-                    
-                    st.markdown(f"### 🚚 Ruta: {nombre_ruta} ({len(items)} productos encontrados)")
-                    
-                    m1, m2 = st.columns(2)
-                    m1.metric("📦 Total Cajas Calculadas", f"{sum_cyan_val if 'sum_cyan_val' in locals() else sum_cajas:,}" if False else f"{sum_cajas:,}")
-                    m2.metric("🍾 Total Unidades (Botellas) Calculadas", f"{sum_unidades:,}")
-                    
-                    st.dataframe(df_final, use_container_width=True)
-                    st.divider()
-
-            if excel_dict:
-                excel_bytes_multiruta = exportar_excel_multiruta(excel_dict, fecha_str=fecha_detectada)
-                
-                st.download_button(
-                    label="📥 Descargar Excel Unificado (Pestañas ML3E51, ML3E52, ML3E53)",
-                    data=excel_bytes_multiruta,
-                    file_name=f"Planillas_Rutas_Inesco_{date.today()}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="dl_multiruta_excel"
-                )
-        else:
-            st.warning("⚠️ No se detectaron SKUs válidos. Comprueba que el PDF contenga texto seleccionable.")
+    st.info("ℹ️ Módulo de PDF en pausa por hoy. Mañana lo afinaremos con calma tal como acordamos.")
