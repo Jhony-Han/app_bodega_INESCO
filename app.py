@@ -10,7 +10,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 # ---------------------------------------------------------
-# 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS CON LOGOTIPO
+# 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS CON LOGOTIPO E ICONOS
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Inesco | Gestión y Extracción",
@@ -18,8 +18,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
-
-LOGO_URL = "https://i.imgur.com/83NqZ9W.png"  # Referencia limpia del logo o contenedor estilizado
 
 st.markdown("""
     <style>
@@ -32,24 +30,17 @@ st.markdown("""
         margin-bottom: 20px;
         box-shadow: 0px 6px 15px rgba(228, 30, 43, 0.4);
     }
-    .cocacola-header img {
-        max-height: 70px;
-        margin-bottom: 10px;
-        background: white;
-        padding: 5px 15px;
-        border-radius: 8px;
-    }
     .cocacola-header h1 { 
         color: white !important; 
         margin: 0; 
         font-weight: 800; 
-        font-size: 1.8rem;
+        font-size: 1.7rem;
         letter-spacing: 1px;
     }
     .cocacola-header p { 
         color: #FFEBEE !important; 
         margin: 5px 0 0 0; 
-        font-size: 0.95rem; 
+        font-size: 0.9rem; 
     }
     .sub-title {
         color: #E41E2B; 
@@ -71,19 +62,31 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown(f"""
-    <div class="cocacola-header">
-        <img src="https://i.imgur.com/83NqZ9W.png" alt="Inesco Logo" onerror="this.style.display='none'">
-        <h1>DISTRIBUCIONES INESCO</h1>
-        <p>Gestión de Inventario, Vencimientos y Extracción por Rutas</p>
-    </div>
-""", unsafe_allow_html=True)
+# Encabezado visual estilizado con iconos de camioncito y vaso
+col_h1, col_h2, col_h3 = st.columns([1, 6, 1])
+with col_h1:
+    st.markdown("<h1 style='text-align: center; font-size: 2.5rem;'>🥤</h1>", unsafe_allow_html=True)
+with col_h2:
+    st.markdown("""
+        <div class="cocacola-header">
+            <h1>DISTRIBUCIONES INESCO</h1>
+            <p>Gestión de Inventario, Vencimientos y Extracción por Rutas</p>
+        </div>
+    """, unsafe_allow_html=True)
+with col_h3:
+    st.markdown("<h1 style='text-align: center; font-size: 2.5rem;'>🚚</h1>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
 # 2. GESTIÓN DE DATOS EN SESIÓN Y CATÁLOGO PERSISTENTE
 # ---------------------------------------------------------
 if "vencimientos" not in st.session_state:
     st.session_state.vencimientos = []
+
+if "modo_captura" not in st.session_state:
+    st.session_state.modo_captura = "Tomar datos con voz"
+
+if "voz_temp_input" not in st.session_state:
+    st.session_state.voz_temp_input = ""
 
 CATALOGO_INICIAL = [
     {"sku": "135718", "descripcion": "COCA-COLA 8 OZ VIR(30)"},
@@ -296,12 +299,11 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
 # ---------------------------------------------------------
 tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF (Rutas)"])
 
-# --- TAB 1: FECHAS DE VENCIMIENTO CON ENTRADA DE VOZ ---
+# --- TAB 1: FECHAS DE VENCIMIENTO CON SELECTOR DE MODO (VOZ / MANUAL) ---
 with tab1:
     st.markdown('<p class="sub-title">➕ Agregar Registro de Vencimiento</p>', unsafe_allow_html=True)
     
     with st.expander("📂 Opciones de Respaldo y Sincronización (JSON)"):
-        # Exportamos tanto vencimientos como el catálogo para que no se pierdan los SKUs agregados
         datos_respaldo = {
             "vencimientos": st.session_state.vencimientos,
             "catalogo": st.session_state.catalogo
@@ -327,7 +329,7 @@ with tab1:
                         st.session_state.last_uploaded_file = uploaded_backup.name
                         st.success("✅ ¡Datos y catálogo restaurados exitosamente!")
                         st.rerun()
-                    elif isinstance(data_recuperada, list): # Compatibilidad con formato antiguo
+                    elif isinstance(data_recuperada, list):
                         st.session_state.vencimientos = data_recuperada
                         st.session_state.last_uploaded_file = uploaded_backup.name
                         st.success("✅ ¡Vencimientos restaurados con éxito!")
@@ -335,22 +337,37 @@ with tab1:
                 except Exception as e:
                     st.error(f"⚠️ Error al leer el respaldo: {e}")
 
-    # Simulación y asistente de voz en JavaScript embebido
-    st.markdown("""
-        <div style="background-color: #F8D7DA; padding: 10px; border-radius: 8px; border-left: 5px solid #E41E2B; margin-bottom: 15px;">
-            <strong>🎙️ Dictado por voz disponible:</strong> Haz clic en el botón inferior para activar el micrófono de tu celular o PC y dictar el nombre o SKU del producto.
-        </div>
-    """, unsafe_allow_html=True)
-
-    # Componente interactivo de voz para filtrar o buscar
-    voz_texto = st.text_input("🎤 Dictado o Búsqueda Rápida:", placeholder="Díctanos o escribe aquí el producto...", key="input_voz_busqueda")
+    # Desplegable para seleccionar el método de entrada sin perder el hilo
+    st.session_state.modo_captura = st.selectbox(
+        "🎛️ Selecciona el método de entrada de datos:",
+        ["Tomar datos con voz", "Tomar datos manual"],
+        index=0 if st.session_state.modo_captura == "Tomar datos con voz" else 1,
+        key="select_modo_captura"
+    )
 
     skus_opt = [f"{item['sku']} - {item['descripcion']}" for item in st.session_state.catalogo]
-    
-    # Filtrar opciones si usó la barra de búsqueda o voz
-    if voz_texto:
-        skus_filtrados = [s for s in skus_opt if voz_texto.lower() in s.lower()]
+
+    # Lógica según el modo seleccionado
+    if st.session_state.modo_captura == "Tomar datos con voz":
+        st.markdown("""
+            <div style="background-color: #F8D7DA; padding: 10px; border-radius: 8px; border-left: 5px solid #E41E2B; margin-bottom: 15px;">
+                <strong>🎙️ Modo Dictado por Voz:</strong> Utiliza el micrófono de tu teclado móvil o PC para dictar el nombre o SKU. El filtro buscará el producto automáticamente.
+            </div>
+        """, unsafe_allow_html=True)
+        
+        voz_texto = st.text_input("🎤 Dictado o Búsqueda por Voz:", value=st.session_state.voz_temp_input, placeholder="Díctanos o escribe aquí el producto...", key="input_voz_busqueda")
+        st.session_state.voz_temp_input = voz_texto
+        
+        if voz_texto:
+            skus_filtrados = [s for s in skus_opt if voz_texto.lower() in s.lower()]
+        else:
+            skus_filtrados = skus_opt
     else:
+        st.markdown("""
+            <div style="background-color: #D1ECF1; padding: 10px; border-radius: 8px; border-left: 5px solid #0C5460; margin-bottom: 15px;">
+                <strong>⌨️ Modo Manual:</strong> Selecciona el producto directamente del listado desplegable.
+            </div>
+        """, unsafe_allow_html=True)
         skus_filtrados = skus_opt
 
     c1, c2 = st.columns([2, 1])
@@ -423,7 +440,6 @@ with tab2:
         
     if st.button("➕ Agregar Nuevo SKU al Catálogo", key="btn_add_sku"):
         if nuevo_sku and nueva_desc:
-            # Validar si ya existe
             sku_limpio = nuevo_sku.strip()
             desc_limpia = nueva_desc.strip()
             existe = any(item['sku'] == sku_limpio for item in st.session_state.catalogo)
@@ -447,7 +463,7 @@ with tab2:
             st.session_state.catalogo.pop(idx)
             st.rerun()
 
-# --- TAB 3: EXTRACCIÓN PDF (RUTAS) - SE DEJA QUIETO ---
+# --- TAB 3: EXTRACCIÓN PDF (RUTAS) ---
 with tab3:
     st.markdown('<p class="sub-title">📄 Extracción de Rutas (ML3E51, ML3E52, ML3E53)</p>', unsafe_allow_html=True)
     st.info("ℹ️ Módulo de PDF en pausa por hoy. Mañana lo afinaremos con calma tal como acordamos.")
