@@ -8,6 +8,7 @@ from datetime import datetime, date
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+import urllib.parse
 
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS (DISEÑO CLÁSICO INESCO)
@@ -92,7 +93,7 @@ if "vencimientos" not in st.session_state:
     st.session_state.vencimientos = []
 
 if "modo_captura" not in st.session_state:
-    st.session_state.modo_captura = "Tomar datos con voz"
+    st.session_state.modo_captura = "Tomar datos manual"
 
 if "voz_temp_input" not in st.session_state:
     st.session_state.voz_temp_input = ""
@@ -246,14 +247,13 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
     wb = Workbook()
     default_sheet = wb.active
     
-    # Estilos de diseño elegante con Rojo Corporativo
     red_title_font = Font(color="FFFFFF", bold=True, size=13, name="Calibri")
-    title_fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid") # Rojo Inesco/Coca-Cola
+    title_fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
     
     sub_font = Font(color="333333", italic=True, size=10, name="Calibri")
-    sub_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid") # Gris muy claro y elegante
+    sub_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
     
-    header_fill = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid") # Azul profesional para la tabla
+    header_fill = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid")
     header_font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
     
     zebra_fill = PatternFill(start_color="F9FBFD", end_color="F9FBFD", fill_type="solid")
@@ -275,7 +275,6 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
             
         num_cols = len(df_r.columns)
         
-        # 1. Título Principal en Rojo Corporativo (Combinado y Centrado)
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(num_cols, 3))
         cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO - REPORTE DE VENCIMIENTOS")
         cell_t.font = red_title_font
@@ -285,21 +284,19 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
             ws.cell(row=1, column=col).border = thin_border
             ws.cell(row=1, column=col).fill = title_fill
         
-        # 2. Subtítulo Centrado y Organizado (Fecha y Sección)
         ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max(num_cols, 3))
-        cell_s = ws.cell(row=2, column=1, value=f"Fecha de Exportación: {fecha_str}   |   Sección: {nombre_ruta}")
+        cell_s = ws.cell(row=2, column=1, value=f"Fecha de Exportación: {fecha_str}    |    Sección: {nombre_ruta}")
         cell_s.font = sub_font
         cell_s.fill = sub_fill
-        cell_s.alignment = Alignment(horizontal="center", vertical="center") # Todo centrado para orden visual
+        cell_s.alignment = Alignment(horizontal="center", vertical="center")
         for col in range(1, max(num_cols, 3) + 1):
             ws.cell(row=2, column=col).border = thin_border
             ws.cell(row=2, column=col).fill = sub_fill
         
         ws.row_dimensions[1].height = 28
         ws.row_dimensions[2].height = 22
-        ws.row_dimensions[3].height = 10  # Espacio visual limpio
+        ws.row_dimensions[3].height = 10
         
-        # 3. Cabeceras de la Tabla en Azul Profesional
         ws.row_dimensions[4].height = 24
         for col_idx, col_name in enumerate(df_r.columns, start=1):
             c = ws.cell(row=4, column=col_idx, value=col_name)
@@ -308,7 +305,6 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
             c.border = thin_border
             c.alignment = Alignment(horizontal="center", vertical="center")
             
-        # 4. Filas de Datos con Estilo Cebra
         for row_idx, row_data in enumerate(df_r.values, start=5):
             ws.row_dimensions[row_idx].height = 20
             is_even = (row_idx % 2 == 0)
@@ -326,7 +322,6 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
                 else:
                     c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
                     
-        # 5. Ajuste Automático de Ancho Inteligente
         for col_idx in range(1, num_cols + 1):
             col_letter = get_column_letter(col_idx)
             max_len = 0
@@ -344,6 +339,7 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
 # 4. PESTAÑAS Y NAVEGACIÓN
 # ---------------------------------------------------------
 tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF (Rutas)"])
+
 # --- TAB 1: FECHAS DE VENCIMIENTO ---
 with tab1:
     st.markdown('<p class="sub-title">➕ Agregar Registro de Vencimiento</p>', unsafe_allow_html=True)
@@ -418,14 +414,11 @@ with tab1:
     with c1:
         sel_sku = st.selectbox("Seleccionar Producto:", options=skus_filtrados, index=0 if len(skus_filtrados) == 1 else None, placeholder="🔎 Buscar SKU o Nombre...", key="select_sku_venc")
     with c2:
-        # CALENDARIO DESPLEGABLE PROFESIONAL: Permite elegir libremente año, mes y día en cualquier orden sin digitar
         fecha_seleccionada = st.date_input("Fecha Vencimiento:", value=date.today(), key="input_calendar_venc")
         
     if st.button("💾 Guardar Fecha de Vencimiento", key="btn_save_venc"):
         if sel_sku:
             s_code, s_desc = sel_sku.split(" - ", 1)
-            
-            # Formatear directamente el objeto del calendario a texto DD/MM/AAAA para el reporte y la tabla
             fecha_formateada = fecha_seleccionada.strftime("%d/%m/%Y")
 
             existe_idx = next((i for i, r in enumerate(st.session_state.vencimientos) if r["SKU"] == s_code), None)
@@ -434,7 +427,6 @@ with tab1:
                 st.session_state.vencimientos[existe_idx]["Fecha Vencimiento"] = fecha_formateada
                 st.warning(f"⚠️ El SKU {s_code} ya estaba registrado. Se actualizó su fecha.")
             else:
-                # INSERTAR DE PRIMERO EN LA LISTA EN PANTALLA (Índice 0)
                 st.session_state.vencimientos.insert(0, {
                     "id": len(st.session_state.vencimientos) + 1,
                     "SKU": s_code,
@@ -456,7 +448,6 @@ with tab1:
             col_a.write(f"**{row['SKU']}**")
             col_b.write(row['Descripción del Producto'])
             
-            # Para los registros ya guardados en la lista, permitimos también usar un selector de fecha individual o mantener edición rápida
             try:
                 fecha_default_row = datetime.strptime(row['Fecha Vencimiento'], "%d/%m/%Y").date()
             except ValueError:
@@ -476,13 +467,30 @@ with tab1:
         df_venc_out = pd.DataFrame(st.session_state.vencimientos)[["SKU", "Descripción del Producto", "Fecha Vencimiento"]]
         excel_bytes = exportar_excel_multiruta({"Vencimientos": df_venc_out}, fecha_str=date.today().strftime('%d/%m/%Y'))
         
-        st.download_button(
-            label="📥 Descargar Reporte en Excel Profesional (Hermoso y Organizado)",
-            data=excel_bytes,
-            file_name=f"Vencimientos_Inesco_{date.today()}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="dl_venc_excel"
-        )
+        # Botones organizados: Descarga de Excel a la izquierda y Compartir por WhatsApp a la derecha
+        col_dl1, col_dl2 = st.columns([1, 1])
+        
+        with col_dl1:
+            st.download_button(
+                label="📥 Descargar Reporte en Excel",
+                data=excel_bytes,
+                file_name=f"Vencimientos_Inesco_{date.today()}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_venc_excel"
+            )
+            
+        with col_dl2:
+            texto_wa = f"Hola, aquí adjunto el reporte de vencimientos de Inesco de fecha {date.today().strftime('%d/%m/%Y')}."
+            texto_encoded = urllib.parse.quote(texto_wa)
+            url_whatsapp = f"https://api.whatsapp.com/send?text={texto_encoded}"
+            
+            st.markdown(f"""
+                <a href="{url_whatsapp}" target="_blank" style="text-decoration: none;">
+                    <div style="background-color: #25D366; color: white; padding: 10px 15px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 0.95rem; box-shadow: 0px 4px 10px rgba(37, 211, 102, 0.3);">
+                        💬 Compartir aviso por WhatsApp
+                    </div>
+                </a>
+            """, unsafe_allow_html=True)
     else:
         st.info("No hay registros guardados todavía. Sube tu archivo de respaldo o agrega un producto.")
 
