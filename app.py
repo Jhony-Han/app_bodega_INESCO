@@ -382,11 +382,11 @@ with tab1:
                 except Exception as e:
                     st.error(f"⚠️ Error al leer el respaldo: {e}")
 
-    # Selector de Modo interactivo
+    # Selector de Modo interactivo: PRIMERO MANUAL, SEGUNDO VOZ
     st.session_state.modo_captura = st.selectbox(
         "🎛️ Selecciona el método de entrada de datos:",
-        ["Tomar datos con voz", "Tomar datos manual"],
-        index=0 if st.session_state.modo_captura == "Tomar datos con voz" else 1,
+        ["Tomar datos manual", "Tomar datos con voz"],
+        index=0,  # Por defecto arranca en Manual
         key="select_modo_captura"
     )
 
