@@ -240,20 +240,20 @@ if "catalogo" not in st.session_state:
     st.session_state.catalogo = CATALOGO_INICIAL
 
 # ---------------------------------------------------------
-# 3. EXPORTADOR EXCEL DE NIVEL PROFESIONAL (DISEÑO HERMOSO)
+# 3. EXPORTADOR EXCEL DE NIVEL PROFESIONAL (ESTILO ROJO Y CENTRADO)
 # ---------------------------------------------------------
 def exportar_excel_multiruta(rutas_dict, fecha_str):
     wb = Workbook()
     default_sheet = wb.active
     
-    # Estilos de diseño elegante
-    blue_title_font = Font(color="FFFFFF", bold=True, size=13, name="Calibri")
-    title_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    # Estilos de diseño elegante con Rojo Corporativo
+    red_title_font = Font(color="FFFFFF", bold=True, size=13, name="Calibri")
+    title_fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid") # Rojo Inesco/Coca-Cola
     
-    sub_font = Font(color="002060", italic=True, size=10, name="Calibri")
-    sub_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+    sub_font = Font(color="333333", italic=True, size=10, name="Calibri")
+    sub_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid") # Gris muy claro y elegante
     
-    header_fill = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid")
+    header_fill = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid") # Azul profesional para la tabla
     header_font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
     
     zebra_fill = PatternFill(start_color="F9FBFD", end_color="F9FBFD", fill_type="solid")
@@ -266,7 +266,6 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
     
     first_sheet = True
     for nombre_ruta, df_r in rutas_dict.items():
-        # Ordenar automáticamente el Excel por secciones de SKU
         if not df_r.empty and "SKU" in df_r.columns:
             df_r = df_r.sort_values(by="SKU", key=lambda col: col.astype(str).str.zfill(10)).reset_index(drop=True)
 
@@ -276,22 +275,22 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
             
         num_cols = len(df_r.columns)
         
-        # 1. Título Principal Combinado y Estilizado
+        # 1. Título Principal en Rojo Corporativo (Combinado y Centrado)
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(num_cols, 3))
         cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO - REPORTE DE VENCIMIENTOS")
-        cell_t.font = blue_title_font
+        cell_t.font = red_title_font
         cell_t.fill = title_fill
         cell_t.alignment = Alignment(horizontal="center", vertical="center")
         for col in range(1, max(num_cols, 3) + 1):
             ws.cell(row=1, column=col).border = thin_border
             ws.cell(row=1, column=col).fill = title_fill
         
-        # 2. Subtítulo de Información y Fecha
+        # 2. Subtítulo Centrado y Organizado (Fecha y Sección)
         ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max(num_cols, 3))
-        cell_s = ws.cell(row=2, column=1, value=f"  Fecha de Exportación: {fecha_str}   |   Sección: {nombre_ruta}")
+        cell_s = ws.cell(row=2, column=1, value=f"Fecha de Exportación: {fecha_str}   |   Sección: {nombre_ruta}")
         cell_s.font = sub_font
         cell_s.fill = sub_fill
-        cell_s.alignment = Alignment(horizontal="left", vertical="center")
+        cell_s.alignment = Alignment(horizontal="center", vertical="center") # Todo centrado para orden visual
         for col in range(1, max(num_cols, 3) + 1):
             ws.cell(row=2, column=col).border = thin_border
             ws.cell(row=2, column=col).fill = sub_fill
@@ -300,7 +299,7 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
         ws.row_dimensions[2].height = 22
         ws.row_dimensions[3].height = 10  # Espacio visual limpio
         
-        # 3. Cabeceras de la Tabla Profesional
+        # 3. Cabeceras de la Tabla en Azul Profesional
         ws.row_dimensions[4].height = 24
         for col_idx, col_name in enumerate(df_r.columns, start=1):
             c = ws.cell(row=4, column=col_idx, value=col_name)
@@ -309,7 +308,7 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
             c.border = thin_border
             c.alignment = Alignment(horizontal="center", vertical="center")
             
-        # 4. Filas de Datos con Estilo Cebra e Impresión Holgada
+        # 4. Filas de Datos con Estilo Cebra
         for row_idx, row_data in enumerate(df_r.values, start=5):
             ws.row_dimensions[row_idx].height = 20
             is_even = (row_idx % 2 == 0)
@@ -327,7 +326,7 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
                 else:
                     c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
                     
-        # 5. Ajuste Automático de Ancho Inteligente (Para que NADA quede apretado)
+        # 5. Ajuste Automático de Ancho Inteligente
         for col_idx in range(1, num_cols + 1):
             col_letter = get_column_letter(col_idx)
             max_len = 0
@@ -335,7 +334,6 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
                 cell_val = ws.cell(row=row, column=col_idx).value
                 if cell_val:
                     max_len = max(max_len, len(str(cell_val)))
-            # Margen de holgura para que se vea amplio y legible
             ws.column_dimensions[col_letter].width = max(max_len + 8, 25)
             
     output = io.BytesIO()
