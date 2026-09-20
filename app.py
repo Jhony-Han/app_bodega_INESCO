@@ -8,7 +8,8 @@ from datetime import datetime, date
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-import urllib.parse
+import streamlit.components.v1 as components
+import base64
 
 # ---------------------------------------------------------
 # 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS (DISEÑO CLÁSICO INESCO)
@@ -378,11 +379,11 @@ with tab1:
                 except Exception as e:
                     st.error(f"⚠️ Error al leer el respaldo: {e}")
 
-    # Selector de Modo interactivo: PRIMERO MANUAL, SEGUNDO VOZ
+    # Selector de Modo interactivo: MANUAL PRIMERO, VOZ SEGUNDO
     st.session_state.modo_captura = st.selectbox(
         "🎛️ Selecciona el método de entrada de datos:",
         ["Tomar datos manual", "Tomar datos con voz"],
-        index=0,  # Por defecto arranca en Manual
+        index=0,
         key="select_modo_captura"
     )
 
@@ -467,7 +468,7 @@ with tab1:
         df_venc_out = pd.DataFrame(st.session_state.vencimientos)[["SKU", "Descripción del Producto", "Fecha Vencimiento"]]
         excel_bytes = exportar_excel_multiruta({"Vencimientos": df_venc_out}, fecha_str=date.today().strftime('%d/%m/%Y'))
         
-        # Botones organizados: Descarga de Excel a la izquierda y Compartir por WhatsApp a la derecha
+        # Botones organizados: Descarga de Excel a la izquierda y Compartir Archivo Directo a la derecha
         col_dl1, col_dl2 = st.columns([1, 1])
         
         with col_dl1:
@@ -480,17 +481,61 @@ with tab1:
             )
             
         with col_dl2:
-            texto_wa = f"Hola, aquí adjunto el reporte de vencimientos de Inesco de fecha {date.today().strftime('%d/%m/%Y')}."
-            texto_encoded = urllib.parse.quote(texto_wa)
-            url_whatsapp = f"https://api.whatsapp.com/send?text={texto_encoded}"
+            # Componente Web Share API para compartir el archivo adjunto directamente por WhatsApp/Correo
+            b64_file = base64.b64encode(excel_bytes).decode()
+            filename_str = f"Vencimientos_Inesco_{date.today()}.xlsx"
             
-            st.markdown(f"""
-                <a href="{url_whatsapp}" target="_blank" style="text-decoration: none;">
-                    <div style="background-color: #25D366; color: white; padding: 10px 15px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 0.95rem; box-shadow: 0px 4px 10px rgba(37, 211, 102, 0.3);">
-                        💬 Compartir aviso por WhatsApp
-                    </div>
-                </a>
-            """, unsafe_allow_html=True)
+            share_html = f"""
+            <button id="shareFileBtn" style="
+                background-color: #25D366;
+                color: white;
+                padding: 10px 15px;
+                border: none;
+                border-radius: 8px;
+                font-weight: bold;
+                font-size: 0.95rem;
+                cursor: pointer;
+                width: 100%;
+                box-shadow: 0px 4px 10px rgba(37, 211, 102, 0.3);
+                font-family: sans-serif;
+            ">💬 Compartir archivo Excel por WhatsApp</button>
+
+            <script>
+            const shareBtn = document.getElementById('shareFileBtn');
+            shareBtn.onclick = async () => {{
+                const b64Data = "{b64_file}";
+                const filename = "{filename_str}";
+                
+                const byteCharacters = atob(b64Data);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {{
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }}
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], {{type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}});
+                const file = new File([blob], filename, {{type: blob.type}});
+                
+                if (navigator.canShare && navigator.canShare({{ files: [file] }})) {{
+                    try {{
+                        await navigator.share({{
+                            files: [file],
+                            title: 'Reporte Inesco',
+                            text: 'Adjunto el reporte de vencimientos de Inesco.'
+                        }});
+                    }} catch (error) {{
+                        console.log('Error sharing', error);
+                    }}
+                }} else {{
+                    // Fallback si el navegador no soporta compartir archivos directamente
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = filename;
+                    link.click();
+                }}
+            }};
+            </script>
+            """
+            components.html(share_html, height=55)
     else:
         st.info("No hay registros guardados todavía. Sube tu archivo de respaldo o agrega un producto.")
 
