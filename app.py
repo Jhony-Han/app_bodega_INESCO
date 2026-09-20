@@ -480,7 +480,7 @@ with tab1:
             )
             
         with col_dl2:
-            texto_wa = f"Hola, comparto el reporte de vencimientos de Distribuciones Inesco del {date.today().strftime('%d/%m/%Y')}. (El archivo se descargó previamente desde la app)."
+            texto_wa = f"Hola, comparto el reporte de vencimientos de Distribuciones Inesco del {date.today().strftime('%d/%m/%Y')}."
             texto_encoded = urllib.parse.quote(texto_wa)
             url_whatsapp = f"https://api.whatsapp.com/send?text={texto_encoded}"
             
