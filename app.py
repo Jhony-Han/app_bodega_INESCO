@@ -240,25 +240,33 @@ if "catalogo" not in st.session_state:
     st.session_state.catalogo = CATALOGO_INICIAL
 
 # ---------------------------------------------------------
-# 3. EXPORTADOR EXCEL PROFESIONAL (ORDENADO POR SKU Y BORDES COMPLETOS)
+# 3. EXPORTADOR EXCEL DE NIVEL PROFESIONAL (DISEÑO HERMOSO)
 # ---------------------------------------------------------
 def exportar_excel_multiruta(rutas_dict, fecha_str):
     wb = Workbook()
     default_sheet = wb.active
     
-    blue_title_font = Font(color="003366", bold=True, size=14, name="Calibri")
-    sub_font = Font(italic=True, size=10, name="Calibri", color="333333")
-    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    # Estilos de diseño elegante
+    blue_title_font = Font(color="FFFFFF", bold=True, size=13, name="Calibri")
+    title_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    
+    sub_font = Font(color="002060", italic=True, size=10, name="Calibri")
+    sub_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+    
+    header_fill = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid")
     header_font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
     
+    zebra_fill = PatternFill(start_color="F9FBFD", end_color="F9FBFD", fill_type="solid")
+    white_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+    
     thin_border = Border(
-        left=Side(style='thin', color='000000'), right=Side(style='thin', color='000000'),
-        top=Side(style='thin', color='000000'), bottom=Side(style='thin', color='000000')
+        left=Side(style='thin', color='BFBFBF'), right=Side(style='thin', color='BFBFBF'),
+        top=Side(style='thin', color='BFBFBF'), bottom=Side(style='thin', color='BFBFBF')
     )
     
     first_sheet = True
     for nombre_ruta, df_r in rutas_dict.items():
-        # ORDENAR AUTOMÁTICAMENTE EL EXCEL POR SECCIONES DE SKU
+        # Ordenar automáticamente el Excel por secciones de SKU
         if not df_r.empty and "SKU" in df_r.columns:
             df_r = df_r.sort_values(by="SKU", key=lambda col: col.astype(str).str.zfill(10)).reset_index(drop=True)
 
@@ -268,27 +276,32 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
             
         num_cols = len(df_r.columns)
         
-        # Título principal con bordes
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(num_cols, 4))
-        cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO")
+        # 1. Título Principal Combinado y Estilizado
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(num_cols, 3))
+        cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO - REPORTE DE VENCIMIENTOS")
         cell_t.font = blue_title_font
+        cell_t.fill = title_fill
         cell_t.alignment = Alignment(horizontal="center", vertical="center")
-        for col in range(1, max(num_cols, 4) + 1):
+        for col in range(1, max(num_cols, 3) + 1):
             ws.cell(row=1, column=col).border = thin_border
+            ws.cell(row=1, column=col).fill = title_fill
         
-        # Subtítulo de fecha con bordes
-        ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max(num_cols, 4))
-        cell_s = ws.cell(row=2, column=1, value=f"Fecha de Exportación / Entrega: {fecha_str} | Sección: {nombre_ruta}")
+        # 2. Subtítulo de Información y Fecha
+        ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max(num_cols, 3))
+        cell_s = ws.cell(row=2, column=1, value=f"  Fecha de Exportación: {fecha_str}   |   Sección: {nombre_ruta}")
         cell_s.font = sub_font
+        cell_s.fill = sub_fill
         cell_s.alignment = Alignment(horizontal="left", vertical="center")
-        for col in range(1, max(num_cols, 4) + 1):
+        for col in range(1, max(num_cols, 3) + 1):
             ws.cell(row=2, column=col).border = thin_border
+            ws.cell(row=2, column=col).fill = sub_fill
         
-        ws.row_dimensions[1].height = 25
-        ws.row_dimensions[2].height = 18
-        ws.row_dimensions[3].height = 10 # Fila vacía de separación
+        ws.row_dimensions[1].height = 28
+        ws.row_dimensions[2].height = 22
+        ws.row_dimensions[3].height = 10  # Espacio visual limpio
         
-        # Cabeceras de la tabla con bordes negros y centrado
+        # 3. Cabeceras de la Tabla Profesional
+        ws.row_dimensions[4].height = 24
         for col_idx, col_name in enumerate(df_r.columns, start=1):
             c = ws.cell(row=4, column=col_idx, value=col_name)
             c.fill = header_fill
@@ -296,21 +309,34 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
             c.border = thin_border
             c.alignment = Alignment(horizontal="center", vertical="center")
             
-        # Filas de datos con bordes negros y alineación inteligente
+        # 4. Filas de Datos con Estilo Cebra e Impresión Holgada
         for row_idx, row_data in enumerate(df_r.values, start=5):
+            ws.row_dimensions[row_idx].height = 20
+            is_even = (row_idx % 2 == 0)
+            row_fill = zebra_fill if is_even else white_fill
+            
             for col_idx, val in enumerate(row_data, start=1):
                 c = ws.cell(row=row_idx, column=col_idx, value=val)
                 c.border = thin_border
+                c.fill = row_fill
+                c.font = Font(name="Calibri", size=11)
                 
                 col_header_name = str(df_r.columns[col_idx-1]).lower()
                 if "sku" in col_header_name or "fecha" in col_header_name:
                     c.alignment = Alignment(horizontal="center", vertical="center")
                 else:
-                    c.alignment = Alignment(horizontal="left", vertical="center")
+                    c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
                     
+        # 5. Ajuste Automático de Ancho Inteligente (Para que NADA quede apretado)
         for col_idx in range(1, num_cols + 1):
             col_letter = get_column_letter(col_idx)
-            ws.column_dimensions[col_letter].width = 25
+            max_len = 0
+            for row in range(4, ws.max_row + 1):
+                cell_val = ws.cell(row=row, column=col_idx).value
+                if cell_val:
+                    max_len = max(max_len, len(str(cell_val)))
+            # Margen de holgura para que se vea amplio y legible
+            ws.column_dimensions[col_letter].width = max(max_len + 8, 25)
             
     output = io.BytesIO()
     wb.save(output)
@@ -414,7 +440,6 @@ with tab1:
                     "Fecha Vencimiento": f_venc.strftime("%d/%m/%Y")
                 })
             
-            # Notificación flotante clara (Toast) y caja verde persistente
             st.toast("¡Guardado correctamente!", icon="✅")
             st.markdown('<div class="success-box">✅ ¡Guardado con éxito! El nuevo registro aparece de primero en la lista.</div>', unsafe_allow_html=True)
             st.rerun()
@@ -444,7 +469,7 @@ with tab1:
         excel_bytes = exportar_excel_multiruta({"Vencimientos": df_venc_out}, fecha_str=date.today().strftime('%d/%m/%Y'))
         
         st.download_button(
-            label="📥 Descargar Reporte en Excel Profesional (Ordenado por SKU)",
+            label="📥 Descargar Reporte en Excel Profesional (Hermoso y Organizado)",
             data=excel_bytes,
             file_name=f"Vencimientos_Inesco_{date.today()}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
