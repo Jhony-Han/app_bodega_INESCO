@@ -419,15 +419,26 @@ with tab1:
     with c1:
         sel_sku = st.selectbox("Seleccionar Producto:", options=skus_filtrados, index=0 if len(skus_filtrados) == 1 else None, placeholder="🔎 Buscar SKU o Nombre...", key="select_sku_venc")
     with c2:
-        f_venc = st.date_input("Fecha de Vencimiento:", value=date.today(), key="input_date_venc")
+        # Campo de texto libre guiado para ingresar fecha en cualquier orden (Día/Mes/Año) sin restricciones de clics
+        default_str = date.today().strftime("%d/%m/%Y")
+        f_venc_texto = st.text_input("Fecha Vencimiento (DD/MM/AAAA):", value=default_str, key="input_text_venc", placeholder="Ej: 24/03/2027")
         
     if st.button("💾 Guardar Fecha de Vencimiento", key="btn_save_venc"):
         if sel_sku:
             s_code, s_desc = sel_sku.split(" - ", 1)
+            
+            # Validación de formato de fecha flexible e independiente de orden
+            try:
+                fecha_obj = datetime.strptime(f_venc_texto.strip(), "%d/%m/%Y")
+                fecha_formateada = fecha_obj.strftime("%d/%m/%Y")
+            except ValueError:
+                st.error("⚠️ Formato de fecha inválido. Por favor úsalo así: DD/MM/AAAA (Ejemplo: 24/03/2027)")
+                st.stop()
+
             existe_idx = next((i for i, r in enumerate(st.session_state.vencimientos) if r["SKU"] == s_code), None)
             
             if existe_idx is not None:
-                st.session_state.vencimientos[existe_idx]["Fecha Vencimiento"] = f_venc.strftime("%d/%m/%Y")
+                st.session_state.vencimientos[existe_idx]["Fecha Vencimiento"] = fecha_formateada
                 st.warning(f"⚠️ El SKU {s_code} ya estaba registrado. Se actualizó su fecha.")
             else:
                 # INSERTAR DE PRIMERO EN LA LISTA EN PANTALLA (Índice 0)
@@ -435,7 +446,7 @@ with tab1:
                     "id": len(st.session_state.vencimientos) + 1,
                     "SKU": s_code,
                     "Descripción del Producto": s_desc,
-                    "Fecha Vencimiento": f_venc.strftime("%d/%m/%Y")
+                    "Fecha Vencimiento": fecha_formateada
                 })
             
             st.toast("¡Guardado correctamente!", icon="✅")
@@ -452,11 +463,14 @@ with tab1:
             col_a.write(f"**{row['SKU']}**")
             col_b.write(row['Descripción del Producto'])
             
-            fecha_actual = datetime.strptime(row['Fecha Vencimiento'], "%d/%m/%Y").date()
-            nueva_f = col_c.date_input("Fecha", value=fecha_actual, key=f"date_row_{row['SKU']}_{idx}")
+            nueva_f_texto = col_c.text_input("Fecha", value=row['Fecha Vencimiento'], key=f"text_row_{row['SKU']}_{idx}")
             
-            if nueva_f.strftime("%d/%m/%Y") != row['Fecha Vencimiento']:
-                st.session_state.vencimientos[idx]['Fecha Vencimiento'] = nueva_f.strftime("%d/%m/%Y")
+            if nueva_f_texto != row['Fecha Vencimiento']:
+                try:
+                    valid_f = datetime.strptime(nueva_f_texto.strip(), "%d/%m/%Y")
+                    st.session_state.vencimientos[idx]['Fecha Vencimiento'] = valid_f.strftime("%d/%m/%Y")
+                except ValueError:
+                    pass
             
             if col_d.button("❌ Borrar", key=f"del_row_{row['SKU']}_{idx}"):
                 st.session_state.vencimientos.pop(idx)
