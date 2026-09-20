@@ -59,10 +59,20 @@ st.markdown("""
         width: 100%;
         padding: 10px 0px;
     }
+    /* Estilo especial para notificaciones de éxito */
+    .success-box {
+        background-color: #D4EDDA;
+        color: #155724;
+        padding: 12px;
+        border-radius: 8px;
+        border-left: 5px solid #28A745;
+        font-weight: bold;
+        margin-bottom: 15px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# Encabezado clásico con el diseño original y legible
+# Encabezado clásico
 col_h1, col_h2, col_h3 = st.columns([1, 6, 1])
 with col_h1:
     st.markdown("<h1 style='text-align: center; font-size: 2.5rem; margin-top: 20px;'>🥤</h1>", unsafe_allow_html=True)
@@ -231,7 +241,7 @@ if "catalogo" not in st.session_state:
     st.session_state.catalogo = CATALOGO_INICIAL
 
 # ---------------------------------------------------------
-# 3. EXPORTADOR EXCEL MULTIRUTA
+# 3. EXPORTADOR EXCEL PROFESIONAL MULTIRUTA (CON BORDES Y ALINEACIÓN)
 # ---------------------------------------------------------
 def exportar_excel_multiruta(rutas_dict, fecha_str):
     wb = Workbook()
@@ -242,12 +252,9 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
     header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
     header_font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
     
-    total_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
-    total_font = Font(color="002060", bold=True, size=11, name="Calibri")
-    
     thin_border = Border(
-        left=Side(style='thin', color='D9D9D9'), right=Side(style='thin', color='D9D9D9'),
-        top=Side(style='thin', color='D9D9D9'), bottom=Side(style='thin', color='D9D9D9')
+        left=Side(style='thin', color='000000'), right=Side(style='thin', color='000000'),
+        top=Side(style='thin', color='000000'), bottom=Side(style='thin', color='000000')
     )
     
     first_sheet = True
@@ -270,25 +277,30 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
         ws.row_dimensions[1].height = 25
         ws.row_dimensions[2].height = 18
         
+        # Cabeceras con bordes negros y centrado
         for col_idx, col_name in enumerate(df_r.columns, start=1):
             c = ws.cell(row=4, column=col_idx, value=col_name)
             c.fill = header_fill
             c.font = header_font
+            c.border = thin_border
             c.alignment = Alignment(horizontal="center", vertical="center")
             
+        # Filas de datos con bordes negros y alineación inteligente
         for row_idx, row_data in enumerate(df_r.values, start=5):
-            val_first = str(row_data[0]).upper()
-            is_total_row = ("TOTAL" in val_first or "SUBTOTAL" in val_first)
             for col_idx, val in enumerate(row_data, start=1):
                 c = ws.cell(row=row_idx, column=col_idx, value=val)
                 c.border = thin_border
-                if is_total_row:
-                    c.fill = total_fill
-                    c.font = total_font
+                
+                # Alinear SKU y Fechas al centro, Descripciones a la izquierda
+                col_header_name = str(df_r.columns[col_idx-1]).lower()
+                if "sku" in col_header_name or "fecha" in col_header_name:
+                    c.alignment = Alignment(horizontal="center", vertical="center")
+                else:
+                    c.alignment = Alignment(horizontal="left", vertical="center")
                     
         for col_idx in range(1, num_cols + 1):
             col_letter = get_column_letter(col_idx)
-            ws.column_dimensions[col_letter].width = 20
+            ws.column_dimensions[col_letter].width = 25
             
     output = io.BytesIO()
     wb.save(output)
@@ -337,7 +349,7 @@ with tab1:
                 except Exception as e:
                     st.error(f"⚠️ Error al leer el respaldo: {e}")
 
-    # Selector de Modo interactivo (Voz vs Manual)
+    # Selector de Modo interactivo
     st.session_state.modo_captura = st.selectbox(
         "🎛️ Selecciona el método de entrada de datos:",
         ["Tomar datos con voz", "Tomar datos manual"],
@@ -347,11 +359,10 @@ with tab1:
 
     skus_opt = [f"{item['sku']} - {item['descripcion']}" for item in st.session_state.catalogo]
 
-    # Interfaz según el modo elegido
     if st.session_state.modo_captura == "Tomar datos con voz":
         st.markdown("""
             <div style="background-color: #F8D7DA; padding: 10px; border-radius: 8px; border-left: 5px solid #E41E2B; margin-bottom: 15px; color: #721C24;">
-                <strong>🎙️ Modo Dictado / Búsqueda Rápida:</strong> Usa el icono de micrófono del teclado de tu celular o PC, o escribe el nombre del producto (ej: <em>Coca-Cola 350</em>) para filtrar y autocompletar el SKU al instante.
+                <strong>🎙️ Modo Dictado / Búsqueda Rápida:</strong> Usa el icono de micrófono del teclado de tu celular o PC, o escribe el nombre del producto para filtrar y autocompletar el SKU.
             </div>
         """, unsafe_allow_html=True)
         
@@ -385,18 +396,27 @@ with tab1:
                 st.session_state.vencimientos[existe_idx]["Fecha Vencimiento"] = f_venc.strftime("%d/%m/%Y")
                 st.warning(f"⚠️ El SKU {s_code} ya estaba registrado. Se actualizó su fecha.")
             else:
-                st.session_state.vencimientos.append({
+                # INSERTAR DE PRIMERO EN LA LISTA (Índice 0)
+                st.session_state.vencimientos.insert(0, {
                     "id": len(st.session_state.vencimientos) + 1,
                     "SKU": s_code,
                     "Descripción del Producto": s_desc,
                     "Fecha Vencimiento": f_venc.strftime("%d/%m/%Y")
                 })
-                st.success("✅ Registro guardado con éxito.")
+            
+            # ORDENAR AUTOMÁTICAMENTE POR SKU PARA MANTENER LAS SECCIONES ORGANIZADAS
+            st.session_state.vencimientos = sorted(
+                st.session_state.vencimientos, 
+                key=lambda x: str(x["SKU"]).zfill(10)
+            )
+
+            # Notificación visual verde de éxito asegurada
+            st.markdown('<div class="success-box">✅ ¡Guardado con éxito! El registro se ha actualizado y ordenado correctamente.</div>', unsafe_allow_html=True)
             st.rerun()
         else:
             st.warning("⚠️ Debes seleccionar un SKU primero.")
 
-    st.markdown('<p class="sub-title">📋 Registros Guardados</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">📋 Registros Guardados (Ordenados por SKU)</p>', unsafe_allow_html=True)
     
     if st.session_state.vencimientos:
         for idx, row in enumerate(st.session_state.vencimientos):
@@ -419,7 +439,7 @@ with tab1:
         excel_bytes = exportar_excel_multiruta({"Vencimientos": df_venc_out}, fecha_str=date.today().strftime('%d/%m/%Y'))
         
         st.download_button(
-            label="📥 Descargar Reporte en Excel",
+            label="📥 Descargar Reporte en Excel Profesional",
             data=excel_bytes,
             file_name=f"Vencimientos_Inesco_{date.today()}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
