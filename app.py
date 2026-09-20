@@ -59,7 +59,6 @@ st.markdown("""
         width: 100%;
         padding: 10px 0px;
     }
-    /* Estilo especial para notificaciones de éxito */
     .success-box {
         background-color: #D4EDDA;
         color: #155724;
@@ -241,7 +240,7 @@ if "catalogo" not in st.session_state:
     st.session_state.catalogo = CATALOGO_INICIAL
 
 # ---------------------------------------------------------
-# 3. EXPORTADOR EXCEL PROFESIONAL MULTIRUTA (CON BORDES Y ALINEACIÓN)
+# 3. EXPORTADOR EXCEL PROFESIONAL (ORDENADO POR SKU Y BORDES COMPLETOS)
 # ---------------------------------------------------------
 def exportar_excel_multiruta(rutas_dict, fecha_str):
     wb = Workbook()
@@ -259,25 +258,37 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
     
     first_sheet = True
     for nombre_ruta, df_r in rutas_dict.items():
+        # ORDENAR AUTOMÁTICAMENTE EL EXCEL POR SECCIONES DE SKU
+        if not df_r.empty and "SKU" in df_r.columns:
+            df_r = df_r.sort_values(by="SKU", key=lambda col: col.astype(str).str.zfill(10)).reset_index(drop=True)
+
         safe_title = re.sub(r'[\\/*?:[\]]', '_', nombre_ruta)
         ws = default_sheet if first_sheet else wb.create_sheet(title=safe_title[:30])
         first_sheet = False
             
         num_cols = len(df_r.columns)
+        
+        # Título principal con bordes
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(num_cols, 4))
         cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO")
         cell_t.font = blue_title_font
         cell_t.alignment = Alignment(horizontal="center", vertical="center")
+        for col in range(1, max(num_cols, 4) + 1):
+            ws.cell(row=1, column=col).border = thin_border
         
+        # Subtítulo de fecha con bordes
         ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max(num_cols, 4))
-        cell_s = ws.cell(row=2, column=1, value=f"Fecha de Entrega: {fecha_str} | Ruta: {nombre_ruta}")
+        cell_s = ws.cell(row=2, column=1, value=f"Fecha de Exportación / Entrega: {fecha_str} | Sección: {nombre_ruta}")
         cell_s.font = sub_font
         cell_s.alignment = Alignment(horizontal="left", vertical="center")
+        for col in range(1, max(num_cols, 4) + 1):
+            ws.cell(row=2, column=col).border = thin_border
         
         ws.row_dimensions[1].height = 25
         ws.row_dimensions[2].height = 18
+        ws.row_dimensions[3].height = 10 # Fila vacía de separación
         
-        # Cabeceras con bordes negros y centrado
+        # Cabeceras de la tabla con bordes negros y centrado
         for col_idx, col_name in enumerate(df_r.columns, start=1):
             c = ws.cell(row=4, column=col_idx, value=col_name)
             c.fill = header_fill
@@ -291,7 +302,6 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
                 c = ws.cell(row=row_idx, column=col_idx, value=val)
                 c.border = thin_border
                 
-                # Alinear SKU y Fechas al centro, Descripciones a la izquierda
                 col_header_name = str(df_r.columns[col_idx-1]).lower()
                 if "sku" in col_header_name or "fecha" in col_header_name:
                     c.alignment = Alignment(horizontal="center", vertical="center")
@@ -396,7 +406,7 @@ with tab1:
                 st.session_state.vencimientos[existe_idx]["Fecha Vencimiento"] = f_venc.strftime("%d/%m/%Y")
                 st.warning(f"⚠️ El SKU {s_code} ya estaba registrado. Se actualizó su fecha.")
             else:
-                # INSERTAR DE PRIMERO EN LA LISTA (Índice 0)
+                # INSERTAR DE PRIMERO EN LA LISTA EN PANTALLA (Índice 0)
                 st.session_state.vencimientos.insert(0, {
                     "id": len(st.session_state.vencimientos) + 1,
                     "SKU": s_code,
@@ -404,19 +414,14 @@ with tab1:
                     "Fecha Vencimiento": f_venc.strftime("%d/%m/%Y")
                 })
             
-            # ORDENAR AUTOMÁTICAMENTE POR SKU PARA MANTENER LAS SECCIONES ORGANIZADAS
-            st.session_state.vencimientos = sorted(
-                st.session_state.vencimientos, 
-                key=lambda x: str(x["SKU"]).zfill(10)
-            )
-
-            # Notificación visual verde de éxito asegurada
-            st.markdown('<div class="success-box">✅ ¡Guardado con éxito! El registro se ha actualizado y ordenado correctamente.</div>', unsafe_allow_html=True)
+            # Notificación flotante clara (Toast) y caja verde persistente
+            st.toast("¡Guardado correctamente!", icon="✅")
+            st.markdown('<div class="success-box">✅ ¡Guardado con éxito! El nuevo registro aparece de primero en la lista.</div>', unsafe_allow_html=True)
             st.rerun()
         else:
             st.warning("⚠️ Debes seleccionar un SKU primero.")
 
-    st.markdown('<p class="sub-title">📋 Registros Guardados (Ordenados por SKU)</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">📋 Registros Guardados (El más reciente aparece de primero)</p>', unsafe_allow_html=True)
     
     if st.session_state.vencimientos:
         for idx, row in enumerate(st.session_state.vencimientos):
@@ -439,7 +444,7 @@ with tab1:
         excel_bytes = exportar_excel_multiruta({"Vencimientos": df_venc_out}, fecha_str=date.today().strftime('%d/%m/%Y'))
         
         st.download_button(
-            label="📥 Descargar Reporte en Excel Profesional",
+            label="📥 Descargar Reporte en Excel Profesional (Ordenado por SKU)",
             data=excel_bytes,
             file_name=f"Vencimientos_Inesco_{date.today()}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
