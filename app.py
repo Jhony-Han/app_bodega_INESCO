@@ -613,7 +613,7 @@ with tab2:
 # --- TAB 3: EXTRACCIÓN PDF (RUTAS) ---
 with tab3:
     st.markdown('<p class="sub-title">📄 Extracción Total de Rutas y Cargues de FEMSA</p>', unsafe_allow_html=True)
-    st.info("ℹ️ Sube tu PDF de cargue: ahora los formatos con unidades sueltas (ej: /15) asignarán correctamente 0 a cajas y el valor real a unidades.")
+    st.info("ℹ️ Sube tu PDF de cargue")
     
     archivo_pdf = st.file_uploader("📂 Seleccionar archivo PDF de Rutas", type=["pdf"], key="uploader_pdf_rutas")
     
