@@ -336,7 +336,54 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 4. PESTAÑAS Y NAVEGACIÓN
+# 4. FUNCIÓN PARA PROCESAR EL PDF DE RUTAS DE FEMSA
+# ---------------------------------------------------------
+def procesar_pdf_rutas(pdf_file):
+    rutas_encontradas = {}
+    ruta_actual = "General"
+    datos_actuales = []
+    
+    with pdfplumber.open(pdf_file) as pdf:
+        for page in pdf.pages:
+            texto = page.extract_text()
+            if not texto:
+                continue
+                
+            lineas = texto.split('\n')
+            for linea in lineas:
+                # Detectar cambio de ruta
+                if "Ruta / No.de Carga:" in linea:
+                    if datos_actuales and ruta_actual:
+                        rutas_encontradas[ruta_actual] = pd.DataFrame(datos_actuales)
+                    
+                    match_ruta = re.search(r'ML3E5[1-3]', linea)
+                    if match_ruta:
+                        ruta_actual = match_ruta.group(0)
+                    else:
+                        match_gen = re.search(r'Ruta / No.de Carga:\s*([^\s]+)', linea)
+                        ruta_actual = match_gen.group(1) if match_gen else "Ruta_Desconocida"
+                    
+                    datos_actuales = []
+                
+                match_prod = re.match(r'^(\d{5,6})\s+(.*?)(?:\s+\$?([\d/]+))?$', linea.strip())
+                if match_prod:
+                    sku = match_prod.group(1)
+                    desc = match_prod.group(2).replace('|', '').strip()
+                    cant = match_prod.group(3) if match_prod.group(3) else "0/0"
+                    
+                    datos_actuales.append({
+                        "SKU": sku,
+                        "Descripción del Producto": desc,
+                        "Cantidad / Detalle": cant
+                    })
+                    
+        if datos_actuales and ruta_actual:
+            rutas_encontradas[ruta_actual] = pd.DataFrame(datos_actuales)
+            
+    return rutas_encontradas
+
+# ---------------------------------------------------------
+# 5. PESTAÑAS Y NAVEGACIÓN
 # ---------------------------------------------------------
 tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF (Rutas)"])
 
@@ -378,7 +425,6 @@ with tab1:
                 except Exception as e:
                     st.error(f"⚠️ Error al leer el respaldo: {e}")
 
-    # Selector de Modo interactivo: MANUAL PRIMERO, VOZ SEGUNDO
     st.session_state.modo_captura = st.selectbox(
         "🎛️ Selecciona el método de entrada de datos:",
         ["Tomar datos manual", "Tomar datos con voz"],
@@ -467,7 +513,6 @@ with tab1:
         df_venc_out = pd.DataFrame(st.session_state.vencimientos)[["SKU", "Descripción del Producto", "Fecha Vencimiento"]]
         excel_bytes = exportar_excel_multiruta({"Vencimientos": df_venc_out}, fecha_str=date.today().strftime('%d/%m/%Y'))
         
-        # Botones organizados: Descarga de Excel a la izquierda y Aviso Rápido a WhatsApp a la derecha
         col_dl1, col_dl2 = st.columns([1, 1])
         
         with col_dl1:
@@ -532,4 +577,49 @@ with tab2:
 # --- TAB 3: EXTRACCIÓN PDF (RUTAS) ---
 with tab3:
     st.markdown('<p class="sub-title">📄 Extracción de Rutas (ML3E51, ML3E52, ML3E53)</p>', unsafe_allow_html=True)
-    st.info("ℹ️ Módulo de PDF en pausa por hoy. Mañana lo afinaremos con calma tal como acordamos.")
+    st.info("ℹ️ Sube el archivo PDF de cargue de FEMSA para extraer y separar automáticamente los productos por cada ruta en un archivo de Excel.")
+    
+    uploaded_pdf = st.file_uploader("📂 Seleccionar archivo PDF de rutas", type=["pdf"], key="uploader_pdf_rutas")
+    
+    if uploaded_pdf is not None:
+        with st.spinner("Procesando y extrayendo datos de las rutas..."):
+            try:
+                dict_rutas = procesar_pdf_rutas(uploaded_pdf)
+                
+                if dict_rutas:
+                    st.success(f"✅ ¡Se procesaron exitosamente {len(dict_rutas)} rutas del documento!")
+                    
+                    for r_nombre, r_df in dict_rutas.items():
+                        with st.expander(f"Ruta: {r_nombre} ({len(r_df)} productos encontrados)"):
+                            st.dataframe(r_df, use_container_width=True)
+                            
+                    excel_rutas_bytes = exportar_excel_multiruta(dict_rutas, fecha_str=date.today().strftime('%d/%m/%Y'))
+                    
+                    st.divider()
+                    col_pdf1, col_pdf2 = st.columns([1, 1])
+                    
+                    with col_pdf1:
+                        st.download_button(
+                            label="📥 Descargar Excel Consolidado de Rutas",
+                            data=excel_rutas_bytes,
+                            file_name=f"Rutas_Inesco_{date.today()}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key="dl_rutas_excel"
+                        )
+                        
+                    with col_pdf2:
+                        texto_wa_rutas = f"Hola, comparto el reporte consolidado de extracción de rutas de Distribuciones Inesco del {date.today().strftime('%d/%m/%Y')}."
+                        texto_encoded_rutas = urllib.parse.quote(texto_wa_rutas)
+                        url_whatsapp_rutas = f"https://api.whatsapp.com/send?text={texto_encoded_rutas}"
+                        
+                        st.markdown(f"""
+                            <a href="{url_whatsapp_rutas}" target="_blank" style="text-decoration: none;">
+                                <div style="background-color: #25D366; color: white; padding: 10px 15px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 0.95rem; box-shadow: 0px 4px 10px rgba(37, 211, 102, 0.3);">
+                                    💬 Abrir WhatsApp con Aviso de Rutas
+                                </div>
+                            </a>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.warning("⚠️ No se detectaron estructuras de rutas válidas en el PDF.")
+            except Exception as e:
+                st.error(f"⚠️ Ocurrió un error al procesar el PDF: {e}")
