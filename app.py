@@ -241,7 +241,7 @@ if "catalogo" not in st.session_state:
     st.session_state.catalogo = CATALOGO_INICIAL
 
 # ---------------------------------------------------------
-# 3. EXPORTADOR EXCEL PROFESIONAL (CON SUMATORIAS Y SEPARACIÓN)
+# 3. EXPORTADOR EXCEL PROFESIONAL (CON SUMATORIAS Y TÍTULO DE RUTAS)
 # ---------------------------------------------------------
 def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     wb = Workbook()
@@ -268,7 +268,7 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     
     thick_bottom = Border(
         left=Side(style='thin', color='BFBFBF'), right=Side(style='thin', color='BFBFBF'),
-        top=Side(style='thin', color='thin', color_index=0), bottom=Side(style='double', color='000000')
+        top=Side(style='thin', color='BFBFBF'), bottom=Side(style='double', color='000000')
     )
     
     first_sheet = True
@@ -371,12 +371,15 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 4. FUNCIÓN PARA PROCESAR EL PDF DE RUTAS DE FEMSA CON CAJAS Y UNIDADES
+# 4. PARSER INTELIGENTE MULTILÍNEA PARA EL PDF DE RUTAS
 # ---------------------------------------------------------
 def procesar_pdf_rutas(pdf_file):
     rutas_encontradas = {}
     ruta_actual = "General"
     datos_actuales = []
+    
+    sku_actual = None
+    desc_partes = []
     
     with pdfplumber.open(pdf_file) as pdf:
         for page in pdf.pages:
@@ -386,42 +389,109 @@ def procesar_pdf_rutas(pdf_file):
                 
             lineas = texto.split('\n')
             for linea in lineas:
+                linea_str = linea.strip()
+                
                 # Detectar cambio de ruta
-                if "Ruta / No.de Carga:" in linea:
+                if "Ruta / No.de Carga:" in linea_str:
+                    # Si había un producto pendiente por cerrar antes de cambiar de ruta
+                    if sku_actual and desc_partes:
+                        datos_actuales.append({
+                            "SKU": sku_actual,
+                            "Descripción del Producto": " ".join(desc_partes).replace('|', '').strip(),
+                            "Cajas": 0,
+                            "Unidades": 0
+                        })
+                        sku_actual = None
+                        desc_partes = []
+
                     if datos_actuales and ruta_actual:
                         rutas_encontradas[ruta_actual] = pd.DataFrame(datos_actuales)
                     
-                    match_ruta = re.search(r'ML3E5[1-3]', linea)
+                    match_ruta = re.search(r'ML3E5[1-3]', linea_str)
                     if match_ruta:
                         ruta_actual = match_ruta.group(0)
                     else:
-                        match_gen = re.search(r'Ruta / No.de Carga:\s*([^\s]+)', linea)
+                        match_gen = re.search(r'Ruta / No.de Carga:\s*([^\s]+)', linea_str)
                         ruta_actual = match_gen.group(1) if match_gen else "Ruta_Desconocida"
                     
                     datos_actuales = []
+                    continue
                 
-                # Expresión mejorada para capturar SKU, descripción limpia y cantidad (Cajas / Unidades)
-                # Ejemplo línea: 56452 | SCHWEPPES SODA 400ML PET(12) 2/0 o con $, etc.
-                match_prod = re.match(r'^(\d{5,6})\s+(.*?)(?:\s+\$?([\d]*)/([\d]*))?$', linea.strip())
-                if match_prod:
-                    sku = match_prod.group(1)
-                    desc_raw = match_prod.group(2).replace('|', '').strip()
-                    cajas_str = match_prod.group(3)
-                    unidades_str = match_prod.group(4)
-                    
-                    # Limpiar la descripción por si la cantidad quedó pegada al final
-                    desc_limpia = re.sub(r'\s+[\d]*/[\d]*$', '', desc_raw).strip()
-                    
-                    cajas = int(cajas_str) if cajas_str and cajas_str.isdigit() else 0
-                    unidades = int(unidades_str) if unidades_str and unidades_str.isdigit() else 0
+                # Cortar lectura si llegamos a secciones de sumarios o materiales adicionales
+                if "Materiales Adicionales" in linea_str or "Sub-Total Familia" in linea_str:
+                    if sku_actual and desc_partes:
+                        datos_actuales.append({
+                            "SKU": sku_actual,
+                            "Descripción del Producto": " ".join(desc_partes).replace('|', '').strip(),
+                            "Cajas": 0,
+                            "Unidades": 0
+                        })
+                        sku_actual = None
+                        desc_partes = []
+                    continue
+
+                # 1. Caso línea en formato compacto: SKU | DESCRIPCIÓN | CANTIDAD (ej: 160187 | FUZE NEGRO... | $5/0$)
+                match_compacto = re.search(r'^(\d{5,6})\s*\|\s*(.*?)\s*\|\s*\$?(\d+)/(\d+)', linea_str)
+                if match_compacto:
+                    if sku_actual and desc_partes: # Guardar pendiente anterior si lo hubiera
+                        datos_actuales.append({
+                            "SKU": sku_actual,
+                            "Descripción del Producto": " ".join(desc_partes).replace('|', '').strip(),
+                            "Cajas": 0,
+                            "Unidades": 0
+                        })
+                    sku_actual = match_compacto.group(1)
+                    desc = match_compacto.group(2).replace('|', '').strip()
+                    cajas = int(match_compacto.group(3))
+                    unidades = int(match_compacto.group(4))
                     
                     datos_actuales.append({
-                        "SKU": sku,
+                        "SKU": sku_actual,
+                        "Descripción del Producto": desc,
+                        "Cajas": cajas,
+                        "Unidades": unidades
+                    })
+                    sku_actual = None
+                    desc_partes = []
+                    continue
+
+                # 2. Caso formato multilínea (PDF extrae SKU solo en una línea)
+                if re.fullmatch(r'\d{5,6}', linea_str):
+                    if sku_actual and desc_partes:
+                        datos_actuales.append({
+                            "SKU": sku_actual,
+                            "Descripción del Producto": " ".join(desc_partes).replace('|', '').strip(),
+                            "Cajas": 0,
+                            "Unidades": 0
+                        })
+                    sku_actual = linea_str
+                    desc_partes = []
+                    continue
+
+                # 3. Detectar línea de cantidad (ej: $48/0$ o 48/0) cuando ya tenemos un SKU activo
+                match_qty = re.search(r'\$?(\d+)/(\d+)', linea_str)
+                if match_qty and sku_actual:
+                    cajas = int(match_qty.group(1))
+                    unidades = int(match_qty.group(2))
+                    desc_limpia = " ".join(desc_partes).replace('|', '').strip()
+                    
+                    datos_actuales.append({
+                        "SKU": sku_actual,
                         "Descripción del Producto": desc_limpia,
                         "Cajas": cajas,
                         "Unidades": unidades
                     })
-                    
+                    sku_actual = None
+                    desc_partes = []
+                    continue
+
+                # 4. Si tenemos un SKU activo, las líneas intermedias corresponden a la descripción del producto
+                if sku_actual:
+                    # Limpiamos caracteres sobrantes de tuberías o espacios
+                    texto_limpio = linea_str.replace('|', '').strip()
+                    if texto_limpio:
+                        desc_partes.append(texto_limpio)
+                        
         if datos_actuales and ruta_actual:
             rutas_encontradas[ruta_actual] = pd.DataFrame(datos_actuales)
             
@@ -638,7 +708,7 @@ with tab3:
                         with st.expander(f"Ruta: {r_nombre} ({len(r_df)} productos encontrados)"):
                             st.dataframe(r_df, use_container_width=True)
                             
-                    # Generar Excel multiruta profesional con sumatorias
+                    # Generar Excel multiruta profesional con sumatorias de Cajas y Unidades
                     excel_rutas_bytes = exportar_excel_multiruta(dict_rutas, fecha_str=date.today().strftime('%d/%m/%Y'), es_reporte_rutas=True)
                     
                     st.divider()
