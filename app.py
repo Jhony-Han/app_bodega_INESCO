@@ -368,10 +368,10 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
 
 # ---------------------------------------------------------
 # ---------------------------------------------------------
-# 4. PARSER ULTRA FLEXIBLE (DETECTA SKUS Y CANTIDADES EN CUALQUIER DISEÑO)
+# 4. PARSER DIRECTO Y LIMPIO (DESDE EL SKU EN ADELANTE)
 # ---------------------------------------------------------
 def procesar_pdf_rutas(pdf_file):
-    rutas_encontradas = {}
+    datos_totales = []
     mapa_catalogo = {item["sku"]: item["descripcion"] for item in st.session_state.catalogo}
     
     with pdfplumber.open(pdf_file) as pdf:
@@ -382,68 +382,42 @@ def procesar_pdf_rutas(pdf_file):
                 
             lineas = texto_pagina.split('\n')
             
-            # Detectar datos globales de la página (Ruta, Serie, Fecha)
-            nombre_ruta = "ML3E51"
-            num_serie = "N/A"
-            fecha_doc = date.today().strftime('%d/%m/%Y')
-            
-            for l in lineas:
-                m_ruta = re.search(r'ML3E5[1-3]', l)
-                if m_ruta:
-                    nombre_ruta = m_ruta.group(0)
-                m_trans = re.search(r'Transporte:\s*(\d+)', l)
-                if m_trans:
-                    num_serie = m_trans.group(1)
-                m_fec = re.search(r'Fecha\s+(\d{2}\.\d{2}\.\d{4})', l)
-                if m_fec:
-                    fecha_doc = m_fec.group(1)
-            
-            datos_pagina = []
-            
             for linea in lineas:
                 l_str = linea.strip()
                 if not l_str:
                     continue
                 
-                # Buscar si la línea contiene un SKU válido de 5 o 6 dígitos
+                # Buscar SKU de 5 o 6 dígitos
                 m_sku = re.search(r'\b(\d{5,6})\b', l_str)
                 if m_sku:
                     sku = m_sku.group(1)
                     
-                    # Buscar patrón de cantidades tipo Cajas/Unidades (ej: 24/0, 10/2) en la misma línea
-                    m_qty = re.search(r'(\d+)\s*/\s*(\d+)', l_str)
+                    # Búsqueda flexible de cantidades (Cajas / Unidades) con barras, espacios o símbolos
+                    m_qty = re.search(r'[\$\s]*(\d+)\s*[/\\-]\s*(\d+)', l_str)
                     cajas = int(m_qty.group(1)) if m_qty else 0
                     unidades = int(m_qty.group(2)) if m_qty else 0
                     
-                    # Limpiar el resto de la línea para extraer la descripción del producto
+                    # Limpiar descripción eliminando el SKU y las cantidades detectadas
                     desc_limpia = l_str.replace(sku, "")
                     if m_qty:
                         desc_limpia = desc_limpia.replace(m_qty.group(0), "")
                     desc_limpia = re.sub(r'[\$\|\(\)]', '', desc_limpia).strip()
                     
-                    # Si la descripción quedó muy corta o vacía, usar el catálogo oficial
+                    # Obtener descripción final limpia
                     descripcion_final = desc_limpia if len(desc_limpia) > 3 else mapa_catalogo.get(sku, "PRODUCTO FEMSA")
                     
-                    datos_pagina.append({
-                        "Ruta": nombre_ruta, 
-                        "No. Serie": num_serie, 
-                        "Fecha": fecha_doc, 
-                        "Página": f"Pág. {page_idx}",
+                    datos_totales.append({
                         "SKU": sku,
                         "Descripción del Producto": descripcion_final,
-                        "Cajas": cajas, 
+                        "Cajas": cajas,
                         "Unidades": unidades
                     })
             
-            if datos_pagina:
-                df_pag = pd.DataFrame(datos_pagina)
-                clave_ruta = f"{nombre_ruta}"
-                if clave_ruta in rutas_encontradas:
-                    rutas_encontradas[clave_ruta] = pd.concat([rutas_encontradas[clave_ruta], df_pag], ignore_index=True)
-                else:
-                    rutas_encontradas[clave_ruta] = df_pag
-                    
-    return rutas_encontradas
+    if datos_totales:
+        df_final = pd.DataFrame(datos_totales)
+        return {"Cargue_FEMSA": df_final}
+        
+    return {}
 
 # ---------------------------------------------------------
 # 5. PESTAÑAS Y NAVEGACIÓN
