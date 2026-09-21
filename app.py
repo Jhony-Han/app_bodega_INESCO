@@ -250,7 +250,7 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     title_fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
     
     sub_font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
-    sub_fill = PatternFill(start_color="ED7D31", end_color="ED7D31", fill_type="solid") # Resaltador llamativo para el encabezado de ruta
+    sub_fill = PatternFill(start_color="ED7D31", end_color="ED7D31", fill_type="solid")
     
     header_fill = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid")
     header_font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
@@ -281,7 +281,6 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
         num_cols = len(df_r.columns)
         titulo_reporte = "DISTRIBUCIONES INESCO - REPORTE TOTAL DE RUTA" if es_reporte_rutas else "DISTRIBUCIONES INESCO - REPORTE DE VENCIMIENTOS"
         
-        # Fila 1: Título principal
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(num_cols, 3))
         cell_t = ws.cell(row=1, column=1, value=titulo_reporte)
         cell_t.font = red_title_font
@@ -291,7 +290,6 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
             ws.cell(row=1, column=col).border = thin_border
             ws.cell(row=1, column=col).fill = title_fill
         
-        # Fila 2: Encabezado de ruta con resaltador (removido del cuerpo de la tabla)
         ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max(num_cols, 3))
         cell_s = ws.cell(row=2, column=1, value=f"📌 {header_text}    (Fecha de Exportación: {fecha_str})")
         cell_s.font = sub_font
@@ -305,7 +303,6 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
         ws.row_dimensions[2].height = 24
         ws.row_dimensions[3].height = 10
         
-        # Fila 4: Cabeceras de la tabla
         ws.row_dimensions[4].height = 24
         for col_idx, col_name in enumerate(df_r.columns, start=1):
             c = ws.cell(row=4, column=col_idx, value=col_name)
@@ -314,7 +311,6 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
             c.border = thin_border
             c.alignment = Alignment(horizontal="center", vertical="center")
             
-        # Filas de datos
         for row_idx, row_data in enumerate(df_r.values, start=5):
             ws.row_dimensions[row_idx].height = 20
             is_even = (row_idx % 2 == 0)
@@ -328,7 +324,6 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
                 
                 col_header_name = str(df_r.columns[col_idx-1]).lower()
                 
-                # Forzar formato numérico limpio en Cajas y Unidades para que Excel sume perfecto
                 if "cajas" in col_header_name or "unidades" in col_header_name:
                     try:
                         c.value = int(val) if val != "" and val is not None else 0
@@ -343,7 +338,6 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
                     c.value = val
                     c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
                     
-        # Fila de Totales con fórmulas limpias aseguradas
         if es_reporte_rutas and not df_r.empty:
             last_row = 4 + len(df_r)
             total_row_idx = last_row + 1
@@ -381,7 +375,7 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 4. PROCESAMIENTO DE PDF DE RUTAS (LIMPIEZA DE FILAS DE TEXTO)
+# 4. PROCESAMIENTO DE PDF DE RUTAS (LIMPIEZA Y EXTRACCIÓN ROBUSTA)
 # ---------------------------------------------------------
 def procesar_pdf_rutas(pdf_file):
     routes_data = {}
@@ -403,29 +397,39 @@ def procesar_pdf_rutas(pdf_file):
                 if not l_str:
                     continue
                 
-                # Detectar ruta actual y actualizar encabezado global (pero NO añadirla como producto)
                 m_ruta = re.search(r'ML3E5[1-3]', l_str)
                 if m_ruta:
                     current_route = m_ruta.group(0)
                 
                 if "Ruta" in l_str or "No.de Carga" in l_str or "Fecha de Entrega" in l_str:
                     current_header_info = l_str
-                    continue # Omitimos que esta línea pase a la tabla de productos
+                    continue 
                 
-                # Buscar SKU válido de 5 o 6 dígitos
                 m_sku = re.search(r'\b(\d{5,6})\b', l_str)
                 if m_sku:
                     sku = m_sku.group(1)
+                    cajas = 0
+                    unidades = 0
                     
-                    # Extracción precisa de cantidades Cajas / Unidades
+                    # Búsqueda robusta de cantidades (cajas / unidades) incluyendo formato con ceros y espacios tipo " 0 /8" o " 6 /1"
                     m_qty = re.search(r'[\$\s]*(\d+)\s*[/\\-]\s*(\d+)', l_str)
-                    cajas = int(m_qty.group(1)) if m_qty else 0
-                    unidades = int(m_qty.group(2)) if m_qty else 0
+                    if m_qty:
+                        cajas = int(m_qty.group(1))
+                        unidades = int(m_qty.group(2))
+                    else:
+                        # Patrón alternativo cuando viene pegado al final o separado con barra y espacios atípicos
+                        m_alt = re.search(r'\b(\d+)\s*/\s*(\d+)\b', l_str)
+                        if m_alt:
+                            cajas = int(m_alt.group(1))
+                            unidades = int(m_alt.group(2))
                     
-                    # Limpiar descripción eliminando SKU y números de cantidad
+                    # Limpieza avanzada de la descripción eliminando SKU y patrones de cantidad remanentes
                     desc_limpia = l_str.replace(sku, "")
                     if m_qty:
                         desc_limpia = desc_limpia.replace(m_qty.group(0), "")
+                    # Limpiar patrones sueltos de barra con número al final de la descripción (ej: " /10", " 6 /1")
+                    desc_limpia = re.sub(r'\s+\d+\s*[/\\-]\s*\d+\s*$', '', desc_limpia)
+                    desc_limpia = re.sub(r'\s+[/\\-]\s*\d+\s*$', '', desc_limpia)
                     desc_limpia = re.sub(r'[\$\|\(\)]', '', desc_limpia).strip()
                     
                     descripcion_final = desc_limpia if len(desc_limpia) > 3 else mapa_catalogo.get(sku, "PRODUCTO FEMSA")
@@ -615,13 +619,13 @@ with tab2:
 # --- TAB 3: EXTRACCIÓN PDF (RUTAS) ---
 with tab3:
     st.markdown('<p class="sub-title">📄 Extracción Total de Rutas y Cargues de FEMSA</p>', unsafe_allow_html=True)
-    st.info("ℹ️ Sube tu PDF de cargue: las líneas de texto de rutas se han removido limpiamente del cuerpo de los productos y se han colocado como un encabezado superior resaltado. Además, las sumatorias de unidades y cajas ahora calculan de forma exacta.")
+    st.info("ℹ️ Sube tu PDF de cargue: ahora las cantidades con ceros en cajas y unidades sueltas se capturan y separan correctamente de la descripción del producto.")
     
     archivo_pdf = st.file_uploader("📂 Seleccionar archivo PDF de Rutas", type=["pdf"], key="uploader_pdf_rutas")
     
     if archivo_pdf is not None:
         if st.button("🚀 Procesar PDF y Generar Excel", key="btn_procesar_pdf"):
-            with st.spinner("🔄 Procesando PDF y limpiando estructura..."):
+            with st.spinner("🔄 Procesando PDF y ajustando extracción de unidades..."):
                 try:
                     datos_rutas = procesar_pdf_rutas(archivo_pdf)
                     
@@ -635,7 +639,7 @@ with tab3:
                             
                         excel_rutas_bytes = exportar_excel_multiruta(dfs_para_excel, fecha_str=date.today().strftime('%d/%m/%Y'), es_reporte_rutas=True)
                         
-                        st.success(f"✅ ¡Proceso exitoso! Se detectaron {len(datos_rutas)} rutas limpias.")
+                        st.success(f"✅ ¡Proceso exitoso! Se detectaron {len(datos_rutas)} rutas.")
                         
                         st.download_button(
                             label="📥 Descargar Reporte Consolidado de Rutas (Excel)",
