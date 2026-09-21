@@ -367,6 +367,8 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     return output.getvalue()
 
 # ---------------------------------------------------------
+# 4. PROCESAMIENTO DE PDF DE RUTAS
+# ---------------------------------------------------------
 def procesar_pdf_rutas(pdf_file):
     routes_data = {}
     mapa_catalogo = {item["sku"]: item["descripcion"] for item in st.session_state.catalogo}
@@ -392,11 +394,11 @@ def procesar_pdf_rutas(pdf_file):
                 if m_ruta:
                     current_route = m_ruta.group(0)
                 
-                # Capturar el texto del encabezado (resaltado en amarillo)
+                # Capturar el texto del encabezado
                 if "Ruta" in l_str or "No.de Carga" in l_str or "Fecha de Entrega" in l_str:
                     current_header_info = l_str
                 
-                # Buscar SKU de 5 o 6 dígitos (ignora índices iniciales o finales)
+                # Buscar SKU de 5 o 6 dígitos
                 m_sku = re.search(r'\b(\d{5,6})\b', l_str)
                 if m_sku:
                     sku = m_sku.group(1)
@@ -414,7 +416,6 @@ def procesar_pdf_rutas(pdf_file):
                     
                     descripcion_final = desc_limpia if len(desc_limpia) > 3 else mapa_catalogo.get(sku, "PRODUCTO FEMSA")
                     
-                    # Inicializar estructura de la ruta si no existe
                     if current_route not in routes_data:
                         routes_data[current_route] = {
                             "header": current_header_info or f"Ruta / No.de Carga: {current_route}",
@@ -627,48 +628,37 @@ with tab3:
     st.markdown('<p class="sub-title">📄 Extracción Total de Rutas y Cargues de FEMSA</p>', unsafe_allow_html=True)
     st.info("ℹ️ Sube tu archivo PDF de cargue para convertirlo de manera exacta y completa en un reporte de Excel con todas las rutas, números de serie, fechas, páginas, SKUs, descripciones, cajas, unidades y las sumatorias totales.")
     
-    uploaded_pdf = st.file_uploader("📂 Seleccionar archivo PDF de rutas", type=["pdf"], key="uploader_pdf_rutas")
+    archivo_pdf = st.file_uploader("📂 Seleccionar archivo PDF de Rutas", type=["pdf"], key="uploader_pdf_rutas")
     
-    if uploaded_pdf is not None:
-        with st.spinner("Procesando y convirtiendo todo el PDF a Excel..."):
-            try:
-                dict_rutas = procesar_pdf_rutas(uploaded_pdf)
-                
-                if dict_rutas:
-                    st.success(f"✅ ¡Se procesaron exitosamente {len(dict_rutas)} secciones/rutas del documento!")
+    if archivo_pdf is not None:
+        if st.button("🚀 Procesar PDF y Generar Excel", key="btn_procesar_pdf"):
+            with st.spinner("🔄 Procesando el archivo PDF y extrayendo las rutas..."):
+                try:
+                    datos_rutas = procesar_pdf_rutas(archivo_pdf)
                     
-                    for r_nombre, r_df in dict_rutas.items():
-                        with st.expander(f"Sección / Ruta: {r_nombre} ({len(r_df)} registros extraídos)"):
-                            st.dataframe(r_df, use_container_width=True)
+                    if datos_rutas:
+                        dfs_para_excel = {}
+                        for r_name, r_info in datos_rutas.items():
+                            df_ruta = pd.DataFrame(r_info["items"])
+                            dfs_para_excel[r_name] = df_ruta
                             
-                    # Generar Excel multiruta profesional con sumatorias exactas
-                    excel_rutas_bytes = exportar_excel_multiruta(dict_rutas, fecha_str=date.today().strftime('%d/%m/%Y'), es_reporte_rutas=True)
-                    
-                    st.divider()
-                    col_pdf1, col_pdf2 = st.columns([1, 1])
-                    
-                    with col_pdf1:
+                        excel_rutas_bytes = exportar_excel_multiruta(dfs_para_excel, fecha_str=date.today().strftime('%d/%m/%Y'), es_reporte_rutas=True)
+                        
+                        st.success(f"✅ ¡Proceso exitoso! Se detectaron {len(datos_rutas)} rutas en el documento.")
+                        
                         st.download_button(
-                            label="📥 Descargar Excel Total de Rutas",
+                            label="📥 Descargar Reporte Consolidado de Rutas (Excel)",
                             data=excel_rutas_bytes,
-                            file_name=f"Rutas_Total_Inesco_{date.today()}.xlsx",
+                            file_name=f"Reporte_Rutas_Inesco_{date.today()}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            key="dl_rutas_excel"
+                            key="dl_excel_rutas"
                         )
                         
-                    with col_pdf2:
-                        texto_wa_rutas = f"Hola, comparto el reporte consolidado total de rutas de Distribuciones Inesco del {date.today().strftime('%d/%m/%Y')}."
-                        texto_encoded_rutas = urllib.parse.quote(texto_wa_rutas)
-                        url_whatsapp_rutas = f"https://api.whatsapp.com/send?text={texto_encoded_rutas}"
-                        
-                        st.markdown(f"""
-                            <a href="{url_whatsapp_rutas}" target="_blank" style="text-decoration: none;">
-                                <div style="background-color: #25D366; color: white; padding: 10px 15px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 0.95rem; box-shadow: 0px 4px 10px rgba(37, 211, 102, 0.3);">
-                                    💬 Abrir WhatsApp con Aviso de Rutas
-                                </div>
-                            </a>
-                        """, unsafe_allow_html=True)
-                else:
-                    st.warning("⚠️ No se pudieron extraer datos del PDF. Verifica el archivo.")
-            except Exception as e:
-                st.error(f"⚠️ Ocurrió un error al procesar el PDF: {e}")
+                        for r_name, r_info in datos_rutas.items():
+                            with st.expander(f"🚛 Ruta / Carga: {r_name} ({len(r_info['items'])} productos)"):
+                                st.write(f"**Encabezado:** {r_info['header']}")
+                                st.dataframe(pd.DataFrame(r_info["items"]), use_container_width=True)
+                    else:
+                        st.warning("⚠️ No se pudieron extraer datos válidos del PDF. Verifica que el formato coincida con los documentos de cargue.")
+                except Exception as e:
+                    st.error(f"⚠️ Ocurrió un error al procesar el archivo PDF: {e}")
