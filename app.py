@@ -402,24 +402,25 @@ def procesar_pdf_rutas(pdf_file):
                     cajas = 0
                     unidades = 0
                     
-                    # 1. Búsqueda principal de cantidades (ej: "6 / 8", "0 / 15", "1 / 0")
-                    m_qty = re.search(r'[\$\s]*(\d+)\s*[/\\-]\s*(\d+)', l_str)
-                    if m_qty:
-                        cajas = int(m_qty.group(1))
-                        unidades = int(m_qty.group(2))
+                    # Detección precisa de cantidades con barra (e.g. "6 / 8", " / 15", "0 / 15")
+                    m_slash = re.search(r'(?:^|\s)(\d+)?\s*/\s*(\d+)', l_str)
+                    if m_slash:
+                        c_str = m_slash.group(1)
+                        u_str = m_slash.group(2)
+                        cajas = int(c_str) if c_str else 0
+                        unidades = int(u_str) if u_str else 0
                     else:
-                        # Patrón alternativo cuando viene con espacios o formato particular
-                        m_alt = re.search(r'\b(\d+)\s*/\s*(\d+)\b', l_str)
-                        if m_alt:
-                            cajas = int(m_alt.group(1))
-                            unidades = int(m_alt.group(2))
+                        # Búsqueda general si viene en formato independiente sin barra
+                        m_qty = re.search(r'[\$\s]*(\d+)\s*[/\\-]\s*(\d+)', l_str)
+                        if m_qty:
+                            cajas = int(m_qty.group(1))
+                            unidades = int(m_qty.group(2))
                     
-                    # 2. Limpieza profunda de la descripción del producto
+                    # Limpieza profunda de la descripción del producto
                     desc_limpia = l_str.replace(sku, "")
-                    if m_qty:
-                        desc_limpia = desc_limpia.replace(m_qty.group(0), "")
+                    if m_slash:
+                        desc_limpia = desc_limpia.replace(m_slash.group(0), "")
                     
-                    # Eliminar patrones de cantidad sobrantes al final o intermedios
                     desc_limpia = re.sub(r'\s+\d+\s*[/\\-]\s*\d+\s*$', '', desc_limpia)
                     desc_limpia = re.sub(r'\s+[/\\-]\s*\d+\s*$', '', desc_limpia)
                     
@@ -612,13 +613,13 @@ with tab2:
 # --- TAB 3: EXTRACCIÓN PDF (RUTAS) ---
 with tab3:
     st.markdown('<p class="sub-title">📄 Extracción Total de Rutas y Cargues de FEMSA</p>', unsafe_allow_html=True)
-    st.info("ℹ️ Sube tu PDF de cargue: se han depurado los códigos internos al final de las descripciones y se corrigió la separación de cantidades con cajas en cero.")
+    st.info("ℹ️ Sube tu PDF de cargue: ahora los formatos con unidades sueltas (ej: /15) asignarán correctamente 0 a cajas y el valor real a unidades.")
     
     archivo_pdf = st.file_uploader("📂 Seleccionar archivo PDF de Rutas", type=["pdf"], key="uploader_pdf_rutas")
     
     if archivo_pdf is not None:
         if st.button("🚀 Procesar PDF y Generar Excel", key="btn_procesar_pdf"):
-            with st.spinner("🔄 Procesando PDF y limpiando descripciones..."):
+            with st.spinner("🔄 Procesando PDF y ajustando separación de cajas/unidades..."):
                 try:
                     datos_rutas = procesar_pdf_rutas(archivo_pdf)
                     
