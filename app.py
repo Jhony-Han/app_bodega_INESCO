@@ -60,15 +60,6 @@ st.markdown("""
         width: 100%;
         padding: 10px 0px;
     }
-    .success-box {
-        background-color: #D4EDDA;
-        color: #155724;
-        padding: 12px;
-        border-radius: 8px;
-        border-left: 5px solid #28A745;
-        font-weight: bold;
-        margin-bottom: 15px;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -240,7 +231,7 @@ if "catalogo" not in st.session_state:
     st.session_state.catalogo = CATALOGO_INICIAL
 
 # ---------------------------------------------------------
-# 3. EXPORTADOR EXCEL PROFESIONAL (ESTILO INESCO MEJORADO)
+# 3. EXPORTADOR EXCEL PROFESIONAL
 # ---------------------------------------------------------
 def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     wb = Workbook()
@@ -302,8 +293,8 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
         ws.row_dimensions[1].height = 28
         ws.row_dimensions[2].height = 24
         ws.row_dimensions[3].height = 10
-        
         ws.row_dimensions[4].height = 24
+        
         for col_idx, col_name in enumerate(df_r.columns, start=1):
             c = ws.cell(row=4, column=col_idx, value=col_name)
             c.fill = header_fill
@@ -375,7 +366,7 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 4. PROCESAMIENTO DE PDF DE RUTAS (LIMPIEZA Y EXTRACCIÓN ROBUSTA)
+# 4. PROCESAMIENTO DE PDF DE RUTAS (EXTRACCIÓN Y LIMPIEZA TOTAL)
 # ---------------------------------------------------------
 def procesar_pdf_rutas(pdf_file):
     routes_data = {}
@@ -411,25 +402,33 @@ def procesar_pdf_rutas(pdf_file):
                     cajas = 0
                     unidades = 0
                     
-                    # Búsqueda robusta de cantidades (cajas / unidades) incluyendo formato con ceros y espacios tipo " 0 /8" o " 6 /1"
+                    # 1. Búsqueda principal de cantidades (ej: "6 / 8", "0 / 15", "1 / 0")
                     m_qty = re.search(r'[\$\s]*(\d+)\s*[/\\-]\s*(\d+)', l_str)
                     if m_qty:
                         cajas = int(m_qty.group(1))
                         unidades = int(m_qty.group(2))
                     else:
-                        # Patrón alternativo cuando viene pegado al final o separado con barra y espacios atípicos
+                        # Patrón alternativo cuando viene con espacios o formato particular
                         m_alt = re.search(r'\b(\d+)\s*/\s*(\d+)\b', l_str)
                         if m_alt:
                             cajas = int(m_alt.group(1))
                             unidades = int(m_alt.group(2))
                     
-                    # Limpieza avanzada de la descripción eliminando SKU y patrones de cantidad remanentes
+                    # 2. Limpieza profunda de la descripción del producto
                     desc_limpia = l_str.replace(sku, "")
                     if m_qty:
                         desc_limpia = desc_limpia.replace(m_qty.group(0), "")
-                    # Limpiar patrones sueltos de barra con número al final de la descripción (ej: " /10", " 6 /1")
+                    
+                    # Eliminar patrones de cantidad sobrantes al final o intermedios
                     desc_limpia = re.sub(r'\s+\d+\s*[/\\-]\s*\d+\s*$', '', desc_limpia)
                     desc_limpia = re.sub(r'\s+[/\\-]\s*\d+\s*$', '', desc_limpia)
+                    
+                    # Eliminar códigos largos de control internos y líneas (ej: "184017 _____" o similares)
+                    desc_limpia = re.sub(r'\b\d{5,7}\b\s*_+', '', desc_limpia)
+                    desc_limpia = re.sub(r'\b\d{5,7}\b', '', desc_limpia)
+                    desc_limpia = re.sub(r'_+', '', desc_limpia)
+                    
+                    # Limpiar caracteres especiales sueltos
                     desc_limpia = re.sub(r'[\$\|\(\)]', '', desc_limpia).strip()
                     
                     descripcion_final = desc_limpia if len(desc_limpia) > 3 else mapa_catalogo.get(sku, "PRODUCTO FEMSA")
@@ -502,12 +501,6 @@ with tab1:
     skus_opt = [f"{item['sku']} - {item['descripcion']}" for item in st.session_state.catalogo]
 
     if st.session_state.modo_captura == "Tomar datos con voz":
-        st.markdown("""
-            <div style="background-color: #F8D7DA; padding: 10px; border-radius: 8px; border-left: 5px solid #E41E2B; margin-bottom: 15px; color: #721C24;">
-                <strong>🎙️ Modo Dictado / Búsqueda Rápida:</strong> Usa el icono de micrófono o escribe el nombre del producto para autocompletar.
-            </div>
-        """, unsafe_allow_html=True)
-        
         filtro_voz = st.text_input("🎤 Dicta o escribe el producto:", value=st.session_state.voz_temp_input, placeholder="Ej: Coca-Cola 350, Brisa, Quatro...", key="input_voz_busqueda")
         st.session_state.voz_temp_input = filtro_voz
         skus_filtrados = [s for s in skus_opt if filtro_voz.lower() in s.lower()] if filtro_voz else skus_opt
@@ -619,13 +612,13 @@ with tab2:
 # --- TAB 3: EXTRACCIÓN PDF (RUTAS) ---
 with tab3:
     st.markdown('<p class="sub-title">📄 Extracción Total de Rutas y Cargues de FEMSA</p>', unsafe_allow_html=True)
-    st.info("ℹ️ Sube tu PDF de cargue: ahora las cantidades con ceros en cajas y unidades sueltas se capturan y separan correctamente de la descripción del producto.")
+    st.info("ℹ️ Sube tu PDF de cargue: se han depurado los códigos internos al final de las descripciones y se corrigió la separación de cantidades con cajas en cero.")
     
     archivo_pdf = st.file_uploader("📂 Seleccionar archivo PDF de Rutas", type=["pdf"], key="uploader_pdf_rutas")
     
     if archivo_pdf is not None:
         if st.button("🚀 Procesar PDF y Generar Excel", key="btn_procesar_pdf"):
-            with st.spinner("🔄 Procesando PDF y ajustando extracción de unidades..."):
+            with st.spinner("🔄 Procesando PDF y limpiando descripciones..."):
                 try:
                     datos_rutas = procesar_pdf_rutas(archivo_pdf)
                     
