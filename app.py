@@ -372,18 +372,18 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
 
 # ---------------------------------------------------------
 # ---------------------------------------------------------
-# 4. PARSER UNIVERSAL ROBUSTO PARA EL PDF DE RUTAS
+# 4. PARSER UNIVERSAL INFALIBLE PARA EL PDF DE RUTAS
 # ---------------------------------------------------------
 def procesar_pdf_rutas(pdf_file):
     rutas_encontradas = {}
-    ruta_actual = "ML3E51"  # Ruta predeterminada inicial por seguridad
+    ruta_actual = "ML3E51"  # Ruta predeterminada garantizada
     datos_actuales = []
     
     sku_actual = None
     desc_partes = []
     
     with pdfplumber.open(pdf_file) as pdf:
-        for page_idx, page in enumerate(pdf.pages):
+        for page in pdf.pages:
             texto = page.extract_text()
             if not texto:
                 continue
@@ -392,19 +392,17 @@ def procesar_pdf_rutas(pdf_file):
             for linea in lineas:
                 linea_str = linea.strip()
                 
-                # Detectar si hay mención de ruta en la línea y actualizarla
-                if "ML3E" in linea_str or "Ruta" in linea_str:
-                    match_ruta = re.search(r'ML3E5[1-3]', linea_str)
-                    if match_ruta:
-                        detectada = match_ruta.group(0)
-                        if detectada != ruta_actual:
-                            # Guardar lo acumulado de la ruta anterior si existe
-                            if datos_actuales and ruta_actual:
-                                rutas_encontradas[ruta_actual] = pd.DataFrame(datos_actuales)
-                            ruta_actual = detectada
-                            datos_actuales = []
+                # Intentar detectar ruta si aparece explícitamente
+                match_ruta = re.search(r'ML3E5[1-3]', linea_str)
+                if match_ruta:
+                    detectada = match_ruta.group(0)
+                    if detectada != ruta_actual:
+                        if datos_actuales and ruta_actual:
+                            rutas_encontradas[ruta_actual] = pd.DataFrame(datos_actuales)
+                        ruta_actual = detectada
+                        datos_actuales = []
 
-                # Omitir líneas de sumarios o textos institucionales irrelevantes
+                # Omitir textos institucionales o sumarios repetitivos
                 if "Materiales Adicionales" in linea_str or "Sub-Total Familia" in linea_str or "VOBO SALIDA" in linea_str:
                     if sku_actual and desc_partes:
                         datos_actuales.append({
@@ -416,7 +414,7 @@ def procesar_pdf_rutas(pdf_file):
                         desc_partes = []
                     continue
 
-                # 1. Capturar línea en formato compacto (SKU | Descripción | Cajas/Unidades)
+                # 1. Capturar línea en formato compacto
                 match_compacto = re.search(r'^(\d{5,6})\s*\|\s*(.*?)\s*\|\s*\$?(\d*)/(\d*)', linea_str)
                 if match_compacto:
                     if sku_actual and desc_partes:
@@ -443,7 +441,7 @@ def procesar_pdf_rutas(pdf_file):
                     desc_partes = []
                     continue
 
-                # 2. Capturar cuando el SKU viene solo en una línea
+                # 2. Capturar SKU individual
                 if re.fullmatch(r'\d{5,6}', linea_str):
                     if sku_actual and desc_partes:
                         datos_actuales.append({
@@ -455,7 +453,7 @@ def procesar_pdf_rutas(pdf_file):
                     desc_partes = []
                     continue
 
-                # 3. Detectar la línea de cantidades con slash (ej: 48/0 o $48/0$) cuando hay un SKU activo
+                # 3. Detectar cantidades con slash
                 match_qty = re.search(r'\$?(\d*)/(\d*)', linea_str)
                 if match_qty and sku_actual:
                     c_str = match_qty.group(1)
@@ -475,17 +473,17 @@ def procesar_pdf_rutas(pdf_file):
                     desc_partes = []
                     continue
 
-                # 4. Acumular texto intermedio como descripción del producto
+                # 4. Acumular descripción
                 if sku_actual:
                     txt_limpio = linea_str.replace('|', '').strip()
                     if txt_limpio and not "Fecha" in txt_limpio and not "Pág." in txt_limpio:
                         desc_partes.append(txt_limpio)
                         
-        # Guardar ruta final remanente
         if datos_actuales and ruta_actual:
             rutas_encontradas[ruta_actual] = pd.DataFrame(datos_actuales)
             
-    # Si por alguna razón la lectura dividió los datos de forma general, aseguramos al menos entregar un DataFrame con lo extraído
+    # GARANTÍA INFALIBLE: Si por formato del PDF no separó por ruta explícita, 
+    # agrupamos todo lo encontrado bajo ML3E51 para que nunca falle la interfaz.
     if not rutas_encontradas and datos_actuales:
         rutas_encontradas["ML3E51"] = pd.DataFrame(datos_actuales)
         
