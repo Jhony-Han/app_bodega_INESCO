@@ -241,9 +241,9 @@ if "catalogo" not in st.session_state:
     st.session_state.catalogo = CATALOGO_INICIAL
 
 # ---------------------------------------------------------
-# 3. EXPORTADOR EXCEL DE NIVEL PROFESIONAL (ESTILO ROJO Y CENTRADO)
+# 3. EXPORTADOR EXCEL PROFESIONAL (CON SUMATORIAS Y SEPARACIÓN)
 # ---------------------------------------------------------
-def exportar_excel_multiruta(rutas_dict, fecha_str):
+def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     wb = Workbook()
     default_sheet = wb.active
     
@@ -258,10 +258,17 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
     
     zebra_fill = PatternFill(start_color="F9FBFD", end_color="F9FBFD", fill_type="solid")
     white_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+    total_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+    total_font = Font(bold=True, size=11, name="Calibri", color="000000")
     
     thin_border = Border(
         left=Side(style='thin', color='BFBFBF'), right=Side(style='thin', color='BFBFBF'),
         top=Side(style='thin', color='BFBFBF'), bottom=Side(style='thin', color='BFBFBF')
+    )
+    
+    thick_bottom = Border(
+        left=Side(style='thin', color='BFBFBF'), right=Side(style='thin', color='BFBFBF'),
+        top=Side(style='thin', color='thin', color_index=0), bottom=Side(style='double', color='000000')
     )
     
     first_sheet = True
@@ -275,8 +282,10 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
             
         num_cols = len(df_r.columns)
         
+        titulo_reporte = "DISTRIBUCIONES INESCO - REPORTE DE EXTRACCIÓN DE RUTAS" if es_reporte_rutas else "DISTRIBUCIONES INESCO - REPORTE DE VENCIMIENTOS"
+        
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(num_cols, 3))
-        cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO - REPORTE DE VENCIMIENTOS")
+        cell_t = ws.cell(row=1, column=1, value=titulo_reporte)
         cell_t.font = red_title_font
         cell_t.fill = title_fill
         cell_t.alignment = Alignment(horizontal="center", vertical="center")
@@ -317,11 +326,37 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
                 c.font = Font(name="Calibri", size=11)
                 
                 col_header_name = str(df_r.columns[col_idx-1]).lower()
-                if "sku" in col_header_name or "fecha" in col_header_name:
+                if "sku" in col_header_name or "fecha" in col_header_name or "cajas" in col_header_name or "unidades" in col_header_name:
                     c.alignment = Alignment(horizontal="center", vertical="center")
+                    if "cajas" in col_header_name or "unidades" in col_header_name:
+                        c.number_format = '#,##0'
                 else:
                     c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
                     
+        # Fila de Totales si es reporte de rutas
+        if es_reporte_rutas and not df_r.empty:
+            last_row = 4 + len(df_r)
+            total_row_idx = last_row + 1
+            ws.row_dimensions[total_row_idx].height = 22
+            
+            for col_idx in range(1, num_cols + 1):
+                c = ws.cell(row=total_row_idx, column=col_idx)
+                c.fill = total_fill
+                c.font = total_font
+                c.border = thick_bottom
+                
+                col_header_name = str(df_r.columns[col_idx-1]).lower()
+                if col_idx == 1:
+                    c.value = "TOTALES"
+                    c.alignment = Alignment(horizontal="center", vertical="center")
+                elif "cajas" in col_header_name or "unidades" in col_header_name:
+                    col_letter = get_column_letter(col_idx)
+                    c.value = f"=SUM({col_letter}5:{col_letter}{last_row})"
+                    c.alignment = Alignment(horizontal="center", vertical="center")
+                    c.number_format = '#,##0'
+                else:
+                    c.value = ""
+
         for col_idx in range(1, num_cols + 1):
             col_letter = get_column_letter(col_idx)
             max_len = 0
@@ -336,7 +371,7 @@ def exportar_excel_multiruta(rutas_dict, fecha_str):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 4. FUNCIÓN PARA PROCESAR EL PDF DE RUTAS DE FEMSA
+# 4. FUNCIÓN PARA PROCESAR EL PDF DE RUTAS DE FEMSA CON CAJAS Y UNIDADES
 # ---------------------------------------------------------
 def procesar_pdf_rutas(pdf_file):
     rutas_encontradas = {}
@@ -365,16 +400,26 @@ def procesar_pdf_rutas(pdf_file):
                     
                     datos_actuales = []
                 
-                match_prod = re.match(r'^(\d{5,6})\s+(.*?)(?:\s+\$?([\d/]+))?$', linea.strip())
+                # Expresión mejorada para capturar SKU, descripción limpia y cantidad (Cajas / Unidades)
+                # Ejemplo línea: 56452 | SCHWEPPES SODA 400ML PET(12) 2/0 o con $, etc.
+                match_prod = re.match(r'^(\d{5,6})\s+(.*?)(?:\s+\$?([\d]*)/([\d]*))?$', linea.strip())
                 if match_prod:
                     sku = match_prod.group(1)
-                    desc = match_prod.group(2).replace('|', '').strip()
-                    cant = match_prod.group(3) if match_prod.group(3) else "0/0"
+                    desc_raw = match_prod.group(2).replace('|', '').strip()
+                    cajas_str = match_prod.group(3)
+                    unidades_str = match_prod.group(4)
+                    
+                    # Limpiar la descripción por si la cantidad quedó pegada al final
+                    desc_limpia = re.sub(r'\s+[\d]*/[\d]*$', '', desc_raw).strip()
+                    
+                    cajas = int(cajas_str) if cajas_str and cajas_str.isdigit() else 0
+                    unidades = int(unidades_str) if unidades_str and unidades_str.isdigit() else 0
                     
                     datos_actuales.append({
                         "SKU": sku,
-                        "Descripción del Producto": desc,
-                        "Cantidad / Detalle": cant
+                        "Descripción del Producto": desc_limpia,
+                        "Cajas": cajas,
+                        "Unidades": unidades
                     })
                     
         if datos_actuales and ruta_actual:
@@ -511,7 +556,7 @@ with tab1:
 
         st.divider()
         df_venc_out = pd.DataFrame(st.session_state.vencimientos)[["SKU", "Descripción del Producto", "Fecha Vencimiento"]]
-        excel_bytes = exportar_excel_multiruta({"Vencimientos": df_venc_out}, fecha_str=date.today().strftime('%d/%m/%Y'))
+        excel_bytes = exportar_excel_multiruta({"Vencimientos": df_venc_out}, fecha_str=date.today().strftime('%d/%m/%Y'), es_reporte_rutas=False)
         
         col_dl1, col_dl2 = st.columns([1, 1])
         
@@ -577,7 +622,7 @@ with tab2:
 # --- TAB 3: EXTRACCIÓN PDF (RUTAS) ---
 with tab3:
     st.markdown('<p class="sub-title">📄 Extracción de Rutas (ML3E51, ML3E52, ML3E53)</p>', unsafe_allow_html=True)
-    st.info("ℹ️ Sube el archivo PDF de cargue de FEMSA para extraer y separar automáticamente los productos por cada ruta en un archivo de Excel.")
+    st.info("ℹ️ Sube el archivo PDF de cargue de FEMSA para extraer y separar automáticamente las Cajas y Unidades por cada ruta.")
     
     uploaded_pdf = st.file_uploader("📂 Seleccionar archivo PDF de rutas", type=["pdf"], key="uploader_pdf_rutas")
     
@@ -593,7 +638,8 @@ with tab3:
                         with st.expander(f"Ruta: {r_nombre} ({len(r_df)} productos encontrados)"):
                             st.dataframe(r_df, use_container_width=True)
                             
-                    excel_rutas_bytes = exportar_excel_multiruta(dict_rutas, fecha_str=date.today().strftime('%d/%m/%Y'))
+                    # Generar Excel multiruta profesional con sumatorias
+                    excel_rutas_bytes = exportar_excel_multiruta(dict_rutas, fecha_str=date.today().strftime('%d/%m/%Y'), es_reporte_rutas=True)
                     
                     st.divider()
                     col_pdf1, col_pdf2 = st.columns([1, 1])
