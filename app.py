@@ -375,7 +375,7 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
 # ---------------------------------------------------------
 def procesar_pdf_rutas(pdf_file):
     rutas_encontradas = {}
-    ruta_actual = "General"
+    ruta_actual = None
     datos_actuales = []
     
     sku_actual = None
@@ -391,54 +391,50 @@ def procesar_pdf_rutas(pdf_file):
             for linea in lineas:
                 linea_str = linea.strip()
                 
-                # Detectar cambio de ruta
-                if "Ruta / No.de Carga:" in linea_str:
-                    # Si había un producto pendiente por cerrar antes de cambiar de ruta
-                    if sku_actual and desc_partes:
-                        datos_actuales.append({
-                            "SKU": sku_actual,
-                            "Descripción del Producto": " ".join(desc_partes).replace('|', '').strip(),
-                            "Cajas": 0,
-                            "Unidades": 0
-                        })
-                        sku_actual = None
-                        desc_partes = []
-
-                    if datos_actuales and ruta_actual:
-                        rutas_encontradas[ruta_actual] = pd.DataFrame(datos_actuales)
-                    
+                # Detectar ruta (ej: ML3E51, ML3E52, ML3E53 o variantes de Ruta / No.de Carga)
+                if "Ruta / No.de Carga:" in linea_str or "ML3E" in linea_str:
                     match_ruta = re.search(r'ML3E5[1-3]', linea_str)
                     if match_ruta:
-                        ruta_actual = match_ruta.group(0)
-                    else:
-                        match_gen = re.search(r'Ruta / No.de Carga:\s*([^\s]+)', linea_str)
-                        ruta_actual = match_gen.group(1) if match_gen else "Ruta_Desconocida"
-                    
-                    datos_actuales = []
-                    continue
+                        nueva_ruta = match_ruta.group(0)
+                        if ruta_actual and nueva_ruta != ruta_actual:
+                            if sku_actual and desc_partes:
+                                datos_actuales.append({
+                                    "SKU": sku_actual,
+                                    "Descripción del Producto": " ".join(desc_partes).replace('|', '').strip(),
+                                    "Cajas": 0, "Unidades": 0
+                                })
+                                sku_actual = None
+                                desc_partes = []
+                            if datos_actuales:
+                                rutas_encontradas[ruta_actual] = pd.DataFrame(datos_actuales)
+                            ruta_actual = nueva_ruta
+                            datos_actuales = []
+                        elif not ruta_actual:
+                            ruta_actual = nueva_ruta
                 
+                if not ruta_actual:
+                    ruta_actual = "ML3E51" # Ruta predeterminada si no encuentra cabecera exacta
+
                 # Cortar lectura si llegamos a secciones de sumarios o materiales adicionales
                 if "Materiales Adicionales" in linea_str or "Sub-Total Familia" in linea_str:
                     if sku_actual and desc_partes:
                         datos_actuales.append({
                             "SKU": sku_actual,
                             "Descripción del Producto": " ".join(desc_partes).replace('|', '').strip(),
-                            "Cajas": 0,
-                            "Unidades": 0
+                            "Cajas": 0, "Unidades": 0
                         })
                         sku_actual = None
                         desc_partes = []
                     continue
 
-                # 1. Caso línea en formato compacto: SKU | DESCRIPCIÓN | CANTIDAD (ej: 160187 | FUZE NEGRO... | $5/0$)
+                # 1. Caso línea compacta: SKU | DESCRIPCIÓN | CANTIDAD (ej: 160187 | FUZE... | $5/0$)
                 match_compacto = re.search(r'^(\d{5,6})\s*\|\s*(.*?)\s*\|\s*\$?(\d+)/(\d+)', linea_str)
                 if match_compacto:
-                    if sku_actual and desc_partes: # Guardar pendiente anterior si lo hubiera
+                    if sku_actual and desc_partes:
                         datos_actuales.append({
                             "SKU": sku_actual,
                             "Descripción del Producto": " ".join(desc_partes).replace('|', '').strip(),
-                            "Cajas": 0,
-                            "Unidades": 0
+                            "Cajas": 0, "Unidades": 0
                         })
                     sku_actual = match_compacto.group(1)
                     desc = match_compacto.group(2).replace('|', '').strip()
@@ -455,20 +451,19 @@ def procesar_pdf_rutas(pdf_file):
                     desc_partes = []
                     continue
 
-                # 2. Caso formato multilínea (PDF extrae SKU solo en una línea)
+                # 2. Caso SKU solo en una línea (multilínea)
                 if re.fullmatch(r'\d{5,6}', linea_str):
                     if sku_actual and desc_partes:
                         datos_actuales.append({
                             "SKU": sku_actual,
                             "Descripción del Producto": " ".join(desc_partes).replace('|', '').strip(),
-                            "Cajas": 0,
-                            "Unidades": 0
+                            "Cajas": 0, "Unidades": 0
                         })
                     sku_actual = linea_str
                     desc_partes = []
                     continue
 
-                # 3. Detectar línea de cantidad (ej: $48/0$ o 48/0) cuando ya tenemos un SKU activo
+                # 3. Detectar línea de cantidad (ej: $48/0$ o 48/0) con SKU activo
                 match_qty = re.search(r'\$?(\d+)/(\d+)', linea_str)
                 if match_qty and sku_actual:
                     cajas = int(match_qty.group(1))
@@ -485,9 +480,8 @@ def procesar_pdf_rutas(pdf_file):
                     desc_partes = []
                     continue
 
-                # 4. Si tenemos un SKU activo, las líneas intermedias corresponden a la descripción del producto
+                # 4. Acumular descripción en líneas intermedias
                 if sku_actual:
-                    # Limpiamos caracteres sobrantes de tuberías o espacios
                     texto_limpio = linea_str.replace('|', '').strip()
                     if texto_limpio:
                         desc_partes.append(texto_limpio)
