@@ -371,12 +371,10 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 4. PARSER UNIVERSAL 100% EFECTIVO PARA LOS PDF DE FEMSA
+# 4. PARSER BASADO EN LÍMITES DE BLOQUE (DE "MATERIAL" A "SUB-TOTAL")
 # ---------------------------------------------------------
 def procesar_pdf_rutas(pdf_file):
     rutas_encontradas = {}
-    
-    # Diccionario de búsqueda en catálogo para autocompletar descripciones si faltan
     mapa_catalogo = {item["sku"]: item["descripcion"] for item in st.session_state.catalogo}
     
     with pdfplumber.open(pdf_file) as pdf:
@@ -388,123 +386,128 @@ def procesar_pdf_rutas(pdf_file):
         
         texto_total = "\n".join(texto_completo_paginas)
         
-        # Dividir el documento por bloques de ruta usando "Ruta / No.de Carga:"
-        bloques_ruta = re.split(r'Ruta\s*/\s*No\.de\s*Carga\s*:\s*', texto_total)
-        
-        # Si no encuentra el patrón exacto, intentamos un bloque único general
-        if len(bloques_ruta) <= 1:
-            bloques_ruta = ["ML3E51/00001\n" + texto_total]
+        # Dividir por bloques de ruta usando "Ruta / No.de Carga:"
+        bloques = re.split(r'Ruta\s*/\s*No\.de\s*Carga\s*:\s*', texto_total)
+        if len(bloques) <= 1:
+            bloques = ["ML3E51/00001\n" + texto_total]
             
-        for bloque in bloques_ruta[1:]:
+        for bloque in bloques[1:]:
             lineas = bloque.split('\n')
             if not lineas:
                 continue
                 
-            # Extraer identificador de ruta y número de serie/carga de la primera línea del bloque
-            cabecera_ruta = lineas[0].strip()
-            match_id_ruta = re.search(r'(ML3E5[1-3](?:/\d+)?)', cabecera_ruta)
-            nombre_ruta = match_id_ruta.group(1) if match_id_ruta else "ML3E51"
-            
-            # Extraer fecha del documento (ej: Fecha 14.09.2026)
+            cabecera = lineas[0].strip()
+            match_ruta = re.search(r'(ML3E5[1-3](?:/\d+)?)', cabecera)
+            nombre_ruta = match_ruta.group(1) if match_ruta else "ML3E51"
+            if "/" in nombre_ruta:
+                nombre_ruta = nombre_ruta.split('/')[0]
+                
             match_fecha = re.search(r'Fecha\s+(\d{2}\.\d{2}\.\d{4})', bloque)
             fecha_doc = match_fecha.group(1) if match_fecha else date.today().strftime('%d/%m/%Y')
             
-            # Extraer número de transporte / serie si existe
             match_transporte = re.search(r'Transporte:\s*(\d+)', bloque)
             num_serie = match_transporte.group(1) if match_transporte else "N/A"
             
             datos_ruta = []
-            skus_procesados = set()
+            sku_pend = None
+            desc_pend = []
+            en_zona_productos = False
             
-            # Recorrer línea por línea buscando patrones de SKU (5 o 6 dígitos) y cantidades con slash (ej: 24/0, $24/0$, /15)
-            i = 0
-            while i < len(lineas):
-                linea = lineas[i].strip()
+            for linea in lineas:
+                l_str = linea.strip()
                 
-                # Buscar SKU de 5 o 6 dígitos al inicio de línea o separado por tubería
-                match_sku = re.search(r'(?:^|\|\s*)(\d{5,6})\b', linea)
-                if match_sku:
-                    sku = match_sku.group(1)
-                    
-                    if sku not in skus_procesados:
-                        desc = ""
-                        cajas = 0
-                        unidades = 0
-                        
-                        # Revisar las líneas cercanas (hacia adelante y atrás) para encontrar la descripción y los valores de cajas/unidades
-                        ventana_busqueda = " ".join([lineas[j].strip() for j in range(max(0, i-1), min(len(lineas), i+4))])
-                        
-                        # Extraer descripción si aparece después del SKU en la misma línea o en la siguiente
-                        partes_linea = linea.split('|')
-                        if len(partes_linea) > 1:
-                            desc_candidata = partes_linea[1].replace('|', '').strip()
-                            if len(desc_candidata) > 2 and not re.search(r'\d+/\d+', desc_candidata):
-                                desc = desc_candidata
-                                
-                        if not desc and i + 1 < len(lineas):
-                            siguiente_linea = lineas[i+1].replace('|', '').strip()
-                            if len(siguiente_linea) > 2 and not re.search(r'\d+/\d+', siguiente_linea) and not re.fullmatch(r'\d{5,6}', siguiente_linea):
-                                desc = siguiente_linea
-                                
-                        if not desc:
-                            desc = mapa_catalogo.get(sku, "PRODUCTO FEMSA INESCO")
-                            
-                        # Extraer cantidad (Cajas / Unidades) con formato tipo $24/0$ o 24/0 o /15
-                        match_cant = re.search(r'\$?(\d*)/(\d*)', ventana_busqueda)
-                        if match_cant:
-                            c_str = match_cant.group(1)
-                            u_str = match_cant.group(2)
-                            cajas = int(c_str) if c_str.isdigit() else 0
-                            unidades = int(u_str) if u_str.isdigit() else 0
-                            
+                # Inicia la extracción justo al encontrar la cabecera de productos
+                if "Material" in l_str and "Descripción" in l_str:
+                    en_zona_productos = True
+                    continue
+                
+                # Finaliza la extracción al llegar al subtotal o materiales adicionales
+                if "Sub-Total Familia" in l_str or "Materiales Adicionales" in l_str:
+                    en_zona_productos = False
+                    if sku_pend:
                         datos_ruta.append({
                             "Ruta": nombre_ruta,
                             "No. Serie": num_serie,
                             "Fecha": fecha_doc,
-                            "SKU": sku,
-                            "Descripción del Producto": desc,
-                            "Cajas": cajas,
-                            "Unidades": unidades
+                            "SKU": sku_pend,
+                            "Descripción del Producto": " ".join(desc_pend).replace('|', '').strip() or mapa_catalogo.get(sku_pend, "PRODUCTO FEMSA"),
+                            "Cajas": 0, "Unidades": 0
                         })
-                        skus_procesados.add(sku)
-                i += 1
-                
-            if datos_ruta:
-                rutas_encontradas[nombre_ruta] = pd.DataFrame(datos_ruta)
-                
-    # Plan B por si el PDF tiene una estructura diferente: barrido general de SKUs
-    if not rutas_encontradas:
-        datos_general = []
-        for texto in texto_completo_paginas:
-            match_fecha = re.search(r'Fecha\s+(\d{2}\.\d{2}\.\d{4})', texto)
-            fecha_doc = match_fecha.group(1) if match_fecha else date.today().strftime('%d/%m/%Y')
-            
-            lineas = texto.split('\n')
-            for i, linea in enumerate(lineas):
-                match_sku = re.search(r'\b(\d{5,6})\b', linea)
-                if match_sku:
-                    sku = match_sku.group(1)
-                    ventana = " ".join([lineas[j].strip() for j in range(max(0, i-1), min(len(lineas), i+3))])
-                    match_cant = re.search(r'\$?(\d*)/(\d*)', ventana)
-                    if match_cant:
-                        c_str = match_cant.group(1)
-                        u_str = match_cant.group(2)
+                        sku_pend = None
+                        desc_pend = []
+                    continue
+                    
+                if en_zona_productos:
+                    # Formato compacto: SKU | Descripción | Cajas/Unidades
+                    match_compacto = re.search(r'^(\d{5,6})\s*\|\s*(.*?)\s*\|\s*\$?(\d*)/(\d*)', l_str)
+                    if match_compacto:
+                        if sku_pend:
+                            datos_ruta.append({
+                                "Ruta": nombre_ruta, "No. Serie": num_serie, "Fecha": fecha_doc,
+                                "SKU": sku_pend,
+                                "Descripción del Producto": " ".join(desc_pend).replace('|', '').strip() or mapa_catalogo.get(sku_pend, "PRODUCTO FEMSA"),
+                                "Cajas": 0, "Unidades": 0
+                            })
+                            sku_pend = None
+                            desc_pend = []
+                        sku = match_compacto.group(1)
+                        desc = match_compacto.group(2).replace('|', '').strip()
+                        c_str = match_compacto.group(3)
+                        u_str = match_compacto.group(4)
                         cajas = int(c_str) if c_str.isdigit() else 0
                         unidades = int(u_str) if u_str.isdigit() else 0
                         
-                        desc = mapa_catalogo.get(sku, "PRODUCTO FEMSA")
-                        datos_general.append({
-                            "Ruta": "ML3E51",
-                            "No. Serie": "N/A",
-                            "Fecha": fecha_doc,
+                        datos_ruta.append({
+                            "Ruta": nombre_ruta, "No. Serie": num_serie, "Fecha": fecha_doc,
                             "SKU": sku,
-                            "Descripción del Producto": desc,
-                            "Cajas": cajas,
-                            "Unidades": unidades
+                            "Descripción del Producto": desc if desc else mapa_catalogo.get(sku, "PRODUCTO FEMSA"),
+                            "Cajas": cajas, "Unidades": unidades
                         })
-        if datos_general:
-            rutas_encontradas["ML3E51"] = pd.DataFrame(datos_general).drop_duplicates(subset=["SKU"])
-            
+                        continue
+                        
+                    # SKU solo en su propia línea
+                    if re.fullmatch(r'\d{5,6}', l_str):
+                        if sku_pend:
+                            datos_ruta.append({
+                                "Ruta": nombre_ruta, "No. Serie": num_serie, "Fecha": fecha_doc,
+                                "SKU": sku_pend,
+                                "Descripción del Producto": " ".join(desc_pend).replace('|', '').strip() or mapa_catalogo.get(sku_pend, "PRODUCTO FEMSA"),
+                                "Cajas": 0, "Unidades": 0
+                            })
+                        sku_pend = l_str
+                        desc_pend = []
+                        continue
+                        
+                    # Línea con cantidades (ej: 24/0, $24/0$, /15) cuando hay SKU pendiente
+                    match_qty = re.search(r'\$?(\d*)/(\d*)', l_str)
+                    if match_qty and sku_pend:
+                        c_str = match_qty.group(1)
+                        u_str = match_qty.group(2)
+                        cajas = int(c_str) if c_str.isdigit() else 0
+                        unidades = int(u_str) if u_str.isdigit() else 0
+                        
+                        desc_limpia = " ".join(desc_pend).replace('|', '').strip()
+                        datos_ruta.append({
+                            "Ruta": nombre_ruta, "No. Serie": num_serie, "Fecha": fecha_doc,
+                            "SKU": sku_pend,
+                            "Descripción del Producto": desc_limpia if desc_limpia else mapa_catalogo.get(sku_pend, "PRODUCTO FEMSA"),
+                            "Cajas": cajas, "Unidades": unidades
+                        })
+                        sku_pend = None
+                        desc_pend = []
+                        continue
+                        
+                    # Acumular descripción en líneas intermedias
+                    if sku_pend:
+                        txt_limpio = l_str.replace('|', '').strip()
+                        if txt_limpio and not "Pág." in txt_limpio and not "CENTRO:" in txt_limpio:
+                            desc_pend.append(txt_limpio)
+                            
+            if datos_ruta:
+                df_temp = pd.DataFrame(datos_ruta).drop_duplicates(subset=["SKU"]).reset_index(drop=True)
+                key_final = nombre_ruta if nombre_ruta not in rutas_encontradas else f"{nombre_ruta}_{num_serie}"
+                rutas_encontradas[key_final] = df_temp
+                
     return rutas_encontradas
 
 # ---------------------------------------------------------
@@ -702,7 +705,7 @@ with tab2:
 # --- TAB 3: EXTRACCIÓN PDF (RUTAS) ---
 with tab3:
     st.markdown('<p class="sub-title">📄 Extracción de Rutas y Cargues de FEMSA</p>', unsafe_allow_html=True)
-    st.info("ℹ️ Sube tu archivo PDF de cargue (ej: RLP0084...) para extraer automáticamente las rutas, número de serie, fecha, SKUs, descripciones, cajas, unidades y las sumatorias en el Excel.")
+    st.info("ℹ️ Sube tu archivo PDF de cargue para extraer de forma limpia y completa todos los SKUs comprendidos entre 'Material' y 'Sub-Total Familia' por cada ruta.")
     
     uploaded_pdf = st.file_uploader("📂 Seleccionar archivo PDF de rutas", type=["pdf"], key="uploader_pdf_rutas")
     
