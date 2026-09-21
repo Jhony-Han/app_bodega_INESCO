@@ -371,7 +371,7 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 4. PARSER INTELIGENTE MULTILÍNEA PARA EL PDF DE RUTAS
+# 4. PARSER INTELIGENTE MEJORADO PARA EL PDF DE RUTAS
 # ---------------------------------------------------------
 def procesar_pdf_rutas(pdf_file):
     rutas_encontradas = {}
@@ -391,8 +391,8 @@ def procesar_pdf_rutas(pdf_file):
             for linea in lineas:
                 linea_str = linea.strip()
                 
-                # Detectar ruta (ej: ML3E51, ML3E52, ML3E53 o variantes de Ruta / No.de Carga)
-                if "Ruta / No.de Carga:" in linea_str or "ML3E" in linea_str:
+                # Búsqueda flexible de la ruta (Ej: ML3E51, ML3E52, ML3E53)
+                if "Ruta" in linea_str or "ML3E" in linea_str or "No.de Carga" in linea_str:
                     match_ruta = re.search(r'ML3E5[1-3]', linea_str)
                     if match_ruta:
                         nueva_ruta = match_ruta.group(0)
@@ -413,9 +413,9 @@ def procesar_pdf_rutas(pdf_file):
                             ruta_actual = nueva_ruta
                 
                 if not ruta_actual:
-                    ruta_actual = "ML3E51" # Ruta predeterminada si no encuentra cabecera exacta
+                    ruta_actual = "ML3E51"
 
-                # Cortar lectura si llegamos a secciones de sumarios o materiales adicionales
+                # Cortar lectura en secciones de sumarios o materiales adicionales
                 if "Materiales Adicionales" in linea_str or "Sub-Total Familia" in linea_str:
                     if sku_actual and desc_partes:
                         datos_actuales.append({
@@ -427,7 +427,7 @@ def procesar_pdf_rutas(pdf_file):
                         desc_partes = []
                     continue
 
-                # 1. Caso línea compacta: SKU | DESCRIPCIÓN | CANTIDAD (ej: 160187 | FUZE... | $5/0$)
+                # 1. Caso línea compacta: SKU | DESCRIPCIÓN | CANTIDAD
                 match_compacto = re.search(r'^(\d{5,6})\s*\|\s*(.*?)\s*\|\s*\$?(\d+)/(\d+)', linea_str)
                 if match_compacto:
                     if sku_actual and desc_partes:
@@ -451,7 +451,7 @@ def procesar_pdf_rutas(pdf_file):
                     desc_partes = []
                     continue
 
-                # 2. Caso SKU solo en una línea (multilínea)
+                # 2. Caso SKU solo en una línea
                 if re.fullmatch(r'\d{5,6}', linea_str):
                     if sku_actual and desc_partes:
                         datos_actuales.append({
