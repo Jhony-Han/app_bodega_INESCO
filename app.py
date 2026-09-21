@@ -273,16 +273,12 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     
     first_sheet = True
     for nombre_ruta, df_r in rutas_dict.items():
-        if not df_r.empty and "SKU" in df_r.columns:
-            df_r = df_r.sort_values(by="SKU", key=lambda col: col.astype(str).str.zfill(10)).reset_index(drop=True)
-
         safe_title = re.sub(r'[\\/*?:[\]]', '_', nombre_ruta)
         ws = default_sheet if first_sheet else wb.create_sheet(title=safe_title[:30])
         first_sheet = False
             
         num_cols = len(df_r.columns)
-        
-        titulo_reporte = "DISTRIBUCIONES INESCO - REPORTE DE EXTRACCIÓN DE RUTAS" if es_reporte_rutas else "DISTRIBUCIONES INESCO - REPORTE DE VENCIMIENTOS"
+        titulo_reporte = "DISTRIBUCIONES INESCO - REPORTE TOTAL DE RUTA" if es_reporte_rutas else "DISTRIBUCIONES INESCO - REPORTE DE VENCIMIENTOS"
         
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(num_cols, 3))
         cell_t = ws.cell(row=1, column=1, value=titulo_reporte)
@@ -326,7 +322,7 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
                 c.font = Font(name="Calibri", size=11)
                 
                 col_header_name = str(df_r.columns[col_idx-1]).lower()
-                if "sku" in col_header_name or "ruta" in col_header_name or "serie" in col_header_name or "fecha" in col_header_name or "cajas" in col_header_name or "unidades" in col_header_name:
+                if "sku" in col_header_name or "ruta" in col_header_name or "serie" in col_header_name or "fecha" in col_header_name or "página" in col_header_name or "cajas" in col_header_name or "unidades" in col_header_name:
                     c.alignment = Alignment(horizontal="center", vertical="center")
                     if "cajas" in col_header_name or "unidades" in col_header_name:
                         c.number_format = '#,##0'
@@ -371,143 +367,129 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 4. PARSER BASADO EN LÍMITES DE BLOQUE (DE "MATERIAL" A "SUB-TOTAL")
+# 4. PARSER TOTAL Y EXHAUSTIVO (EXTRACCIÓN COMPLETA SIN EXCLUSIONES)
 # ---------------------------------------------------------
 def procesar_pdf_rutas(pdf_file):
     rutas_encontradas = {}
     mapa_catalogo = {item["sku"]: item["descripcion"] for item in st.session_state.catalogo}
     
     with pdfplumber.open(pdf_file) as pdf:
-        texto_completo_paginas = []
-        for page in pdf.pages:
-            t = page.extract_text()
-            if t:
-                texto_completo_paginas.append(t)
-        
-        texto_total = "\n".join(texto_completo_paginas)
-        
-        # Dividir por bloques de ruta usando "Ruta / No.de Carga:"
-        bloques = re.split(r'Ruta\s*/\s*No\.de\s*Carga\s*:\s*', texto_total)
-        if len(bloques) <= 1:
-            bloques = ["ML3E51/00001\n" + texto_total]
-            
-        for bloque in bloques[1:]:
-            lineas = bloque.split('\n')
-            if not lineas:
+        # Recorrer página por página para capturar absolutamente todo en orden
+        for page_idx, page in enumerate(pdf.pages, start=1):
+            texto_pagina = page.extract_text()
+            if not texto_pagina:
                 continue
                 
-            cabecera = lineas[0].strip()
-            match_ruta = re.search(r'(ML3E5[1-3](?:/\d+)?)', cabecera)
-            nombre_ruta = match_ruta.group(1) if match_ruta else "ML3E51"
-            if "/" in nombre_ruta:
-                nombre_ruta = nombre_ruta.split('/')[0]
-                
-            match_fecha = re.search(r'Fecha\s+(\d{2}\.\d{2}\.\d{4})', bloque)
-            fecha_doc = match_fecha.group(1) if match_fecha else date.today().strftime('%d/%m/%Y')
+            lineas = texto_pagina.split('\n')
             
-            match_transporte = re.search(r'Transporte:\s*(\d+)', bloque)
-            num_serie = match_transporte.group(1) if match_transporte else "N/A"
+            # Detectar datos globales de la página (Ruta, Serie, Fecha)
+            nombre_ruta = "ML3E51"
+            num_serie = "N/A"
+            fecha_doc = date.today().strftime('%d/%m/%Y')
             
-            datos_ruta = []
-            sku_pend = None
-            desc_pend = []
-            en_zona_productos = False
+            for l in lineas:
+                m_ruta = re.search(r'ML3E5[1-3]', l)
+                if m_ruta:
+                    nombre_ruta = m_ruta.group(0)
+                m_trans = re.search(r'Transporte:\s*(\d+)', l)
+                if m_trans:
+                    num_serie = m_trans.group(1)
+                m_fec = re.search(r'Fecha\s+(\d{2}\.\d{2}\.\d{4})', l)
+                if m_fec:
+                    fecha_doc = m_fec.group(1)
+            
+            datos_pagina = []
+            sku_actual = None
+            desc_acumulada = []
             
             for linea in lineas:
                 l_str = linea.strip()
-                
-                # Inicia la extracción justo al encontrar la cabecera de productos
-                if "Material" in l_str and "Descripción" in l_str:
-                    en_zona_productos = True
-                    continue
-                
-                # Finaliza la extracción al llegar al subtotal o materiales adicionales
-                if "Sub-Total Familia" in l_str or "Materiales Adicionales" in l_str:
-                    en_zona_productos = False
-                    if sku_pend:
-                        datos_ruta.append({
-                            "Ruta": nombre_ruta,
-                            "No. Serie": num_serie,
-                            "Fecha": fecha_doc,
-                            "SKU": sku_pend,
-                            "Descripción del Producto": " ".join(desc_pend).replace('|', '').strip() or mapa_catalogo.get(sku_pend, "PRODUCTO FEMSA"),
-                            "Cajas": 0, "Unidades": 0
-                        })
-                        sku_pend = None
-                        desc_pend = []
+                if not l_str:
                     continue
                     
-                if en_zona_productos:
-                    # Formato compacto: SKU | Descripción | Cajas/Unidades
-                    match_compacto = re.search(r'^(\d{5,6})\s*\|\s*(.*?)\s*\|\s*\$?(\d*)/(\d*)', l_str)
-                    if match_compacto:
-                        if sku_pend:
-                            datos_ruta.append({
-                                "Ruta": nombre_ruta, "No. Serie": num_serie, "Fecha": fecha_doc,
-                                "SKU": sku_pend,
-                                "Descripción del Producto": " ".join(desc_pend).replace('|', '').strip() or mapa_catalogo.get(sku_pend, "PRODUCTO FEMSA"),
-                                "Cajas": 0, "Unidades": 0
-                            })
-                            sku_pend = None
-                            desc_pend = []
-                        sku = match_compacto.group(1)
-                        desc = match_compacto.group(2).replace('|', '').strip()
-                        c_str = match_compacto.group(3)
-                        u_str = match_compacto.group(4)
-                        cajas = int(c_str) if c_str.isdigit() else 0
-                        unidades = int(u_str) if u_str.isdigit() else 0
-                        
-                        datos_ruta.append({
-                            "Ruta": nombre_ruta, "No. Serie": num_serie, "Fecha": fecha_doc,
-                            "SKU": sku,
-                            "Descripción del Producto": desc if desc else mapa_catalogo.get(sku, "PRODUCTO FEMSA"),
-                            "Cajas": cajas, "Unidades": unidades
+                # 1. Formato compacto de línea: SKU | Descripción | Cajas/Unidades
+                match_compacto = re.search(r'^(\d{5,6})\s*\|\s*(.*?)\s*\|\s*\$?(\d*)/(\d*)', l_str)
+                if match_compacto:
+                    if sku_actual:
+                        datos_pagina.append({
+                            "Ruta": nombre_ruta, "No. Serie": num_serie, "Fecha": fecha_doc, "Página": f"Pág. {page_idx}",
+                            "SKU": sku_actual,
+                            "Descripción del Producto": " ".join(desc_acumulada).replace('|', '').strip() or mapa_catalogo.get(sku_actual, "PRODUCTO FEMSA"),
+                            "Cajas": 0, "Unidades": 0
                         })
-                        continue
+                        sku_actual = None
+                        desc_acumulada = []
                         
-                    # SKU solo en su propia línea
-                    if re.fullmatch(r'\d{5,6}', l_str):
-                        if sku_pend:
-                            datos_ruta.append({
-                                "Ruta": nombre_ruta, "No. Serie": num_serie, "Fecha": fecha_doc,
-                                "SKU": sku_pend,
-                                "Descripción del Producto": " ".join(desc_pend).replace('|', '').strip() or mapa_catalogo.get(sku_pend, "PRODUCTO FEMSA"),
-                                "Cajas": 0, "Unidades": 0
-                            })
-                        sku_pend = l_str
-                        desc_pend = []
-                        continue
-                        
-                    # Línea con cantidades (ej: 24/0, $24/0$, /15) cuando hay SKU pendiente
-                    match_qty = re.search(r'\$?(\d*)/(\d*)', l_str)
-                    if match_qty and sku_pend:
-                        c_str = match_qty.group(1)
-                        u_str = match_qty.group(2)
-                        cajas = int(c_str) if c_str.isdigit() else 0
-                        unidades = int(u_str) if u_str.isdigit() else 0
-                        
-                        desc_limpia = " ".join(desc_pend).replace('|', '').strip()
-                        datos_ruta.append({
-                            "Ruta": nombre_ruta, "No. Serie": num_serie, "Fecha": fecha_doc,
-                            "SKU": sku_pend,
-                            "Descripción del Producto": desc_limpia if desc_limpia else mapa_catalogo.get(sku_pend, "PRODUCTO FEMSA"),
-                            "Cajas": cajas, "Unidades": unidades
+                    sku = match_compacto.group(1)
+                    desc = match_compacto.group(2).replace('|', '').strip()
+                    c_str = match_compacto.group(3)
+                    u_str = match_compacto.group(4)
+                    cajas = int(c_str) if c_str.isdigit() else 0
+                    unidades = int(u_str) if u_str.isdigit() else 0
+                    
+                    datos_pagina.append({
+                        "Ruta": nombre_ruta, "No. Serie": num_serie, "Fecha": fecha_doc, "Página": f"Pág. {page_idx}",
+                        "SKU": sku,
+                        "Descripción del Producto": desc if desc else mapa_catalogo.get(sku, "PRODUCTO FEMSA"),
+                        "Cajas": cajas, "Unidades": unidades
+                    })
+                    continue
+                    
+                # 2. SKU solitario en la línea
+                if re.fullmatch(r'\d{5,6}', l_str):
+                    if sku_actual:
+                        datos_pagina.append({
+                            "Ruta": nombre_ruta, "No. Serie": num_serie, "Fecha": fecha_doc, "Página": f"Pág. {page_idx}",
+                            "SKU": sku_actual,
+                            "Descripción del Producto": " ".join(desc_acumulada).replace('|', '').strip() or mapa_catalogo.get(sku_actual, "PRODUCTO FEMSA"),
+                            "Cajas": 0, "Unidades": 0
                         })
-                        sku_pend = None
-                        desc_pend = []
-                        continue
-                        
-                    # Acumular descripción en líneas intermedias
-                    if sku_pend:
-                        txt_limpio = l_str.replace('|', '').strip()
-                        if txt_limpio and not "Pág." in txt_limpio and not "CENTRO:" in txt_limpio:
-                            desc_pend.append(txt_limpio)
-                            
-            if datos_ruta:
-                df_temp = pd.DataFrame(datos_ruta).drop_duplicates(subset=["SKU"]).reset_index(drop=True)
-                key_final = nombre_ruta if nombre_ruta not in rutas_encontradas else f"{nombre_ruta}_{num_serie}"
-                rutas_encontradas[key_final] = df_temp
+                    sku_actual = l_str
+                    desc_acumulada = []
+                    continue
+                    
+                # 3. Línea con cantidades (ej: 24/0, $24/0$, /15) cuando ya tenemos un SKU activo
+                match_qty = re.search(r'\$?(\d*)/(\d*)', l_str)
+                if match_qty and sku_actual:
+                    c_str = match_qty.group(1)
+                    u_str = match_qty.group(2)
+                    cajas = int(c_str) if c_str.isdigit() else 0
+                    unidades = int(u_str) if u_str.isdigit() else 0
+                    
+                    desc_limpia = " ".join(desc_acumulada).replace('|', '').strip()
+                    datos_pagina.append({
+                        "Ruta": nombre_ruta, "No. Serie": num_serie, "Fecha": fecha_doc, "Página": f"Pág. {page_idx}",
+                        "SKU": sku_actual,
+                        "Descripción del Producto": desc_limpia if desc_limpia else mapa_catalogo.get(sku_actual, "PRODUCTO FEMSA"),
+                        "Cajas": cajas, "Unidades": unidades
+                    })
+                    sku_actual = None
+                    desc_acumulada = []
+                    continue
+                    
+                # 4. Si hay SKU activo, acumulamos todo el texto intermedio como su descripción
+                if sku_actual:
+                    limpio = l_str.replace('|', '').strip()
+                    if limpio and not "Pág." in limpio and not "CENTRO:" in limpio and not "Sub-Total" in limpio:
+                        desc_acumulada.append(limpio)
+            
+            # Si quedó algo pendiente en la página
+            if sku_actual:
+                datos_pagina.append({
+                    "Ruta": nombre_ruta, "No. Serie": num_serie, "Fecha": fecha_doc, "Página": f"Pág. {page_idx}",
+                    "SKU": sku_actual,
+                    "Descripción del Producto": " ".join(desc_acumulada).replace('|', '').strip() or mapa_catalogo.get(sku_actual, "PRODUCTO FEMSA"),
+                    "Cajas": 0, "Unidades": 0
+                })
                 
+            if datos_pagina:
+                df_pag = pd.DataFrame(datos_pagina)
+                clave_ruta = f"{nombre_ruta}"
+                if clave_ruta in rutas_encontradas:
+                    rutas_encontradas[clave_ruta] = pd.concat([rutas_encontradas[clave_ruta], df_pag], ignore_index=True)
+                else:
+                    rutas_encontradas[clave_ruta] = df_pag
+                    
     return rutas_encontradas
 
 # ---------------------------------------------------------
@@ -704,21 +686,21 @@ with tab2:
 
 # --- TAB 3: EXTRACCIÓN PDF (RUTAS) ---
 with tab3:
-    st.markdown('<p class="sub-title">📄 Extracción de Rutas y Cargues de FEMSA</p>', unsafe_allow_html=True)
-    st.info("ℹ️ Sube tu archivo PDF de cargue para extraer de forma limpia y completa todos los SKUs comprendidos entre 'Material' y 'Sub-Total Familia' por cada ruta.")
+    st.markdown('<p class="sub-title">📄 Extracción Total de Rutas y Cargues de FEMSA</p>', unsafe_allow_html=True)
+    st.info("ℹ️ Sube tu archivo PDF de cargue para convertirlo de manera exacta y completa en un reporte de Excel con todas las rutas, números de serie, fechas, páginas, SKUs, descripciones, cajas, unidades y las sumatorias totales.")
     
     uploaded_pdf = st.file_uploader("📂 Seleccionar archivo PDF de rutas", type=["pdf"], key="uploader_pdf_rutas")
     
     if uploaded_pdf is not None:
-        with st.spinner("Analizando y extrayendo toda la información del PDF..."):
+        with st.spinner("Procesando y convirtiendo todo el PDF a Excel..."):
             try:
                 dict_rutas = procesar_pdf_rutas(uploaded_pdf)
                 
                 if dict_rutas:
-                    st.success(f"✅ ¡Se procesaron exitosamente {len(dict_rutas)} rutas del documento!")
+                    st.success(f"✅ ¡Se procesaron exitosamente {len(dict_rutas)} secciones/rutas del documento!")
                     
                     for r_nombre, r_df in dict_rutas.items():
-                        with st.expander(f"Ruta: {r_nombre} ({len(r_df)} productos extraídos)"):
+                        with st.expander(f"Sección / Ruta: {r_nombre} ({len(r_df)} registros extraídos)"):
                             st.dataframe(r_df, use_container_width=True)
                             
                     # Generar Excel multiruta profesional con sumatorias exactas
@@ -729,15 +711,15 @@ with tab3:
                     
                     with col_pdf1:
                         st.download_button(
-                            label="📥 Descargar Excel Consolidado de Rutas",
+                            label="📥 Descargar Excel Total de Rutas",
                             data=excel_rutas_bytes,
-                            file_name=f"Rutas_Inesco_{date.today()}.xlsx",
+                            file_name=f"Rutas_Total_Inesco_{date.today()}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             key="dl_rutas_excel"
                         )
                         
                     with col_pdf2:
-                        texto_wa_rutas = f"Hola, comparto el reporte consolidado de extracción de rutas de Distribuciones Inesco del {date.today().strftime('%d/%m/%Y')}."
+                        texto_wa_rutas = f"Hola, comparto el reporte consolidado total de rutas de Distribuciones Inesco del {date.today().strftime('%d/%m/%Y')}."
                         texto_encoded_rutas = urllib.parse.quote(texto_wa_rutas)
                         url_whatsapp_rutas = f"https://api.whatsapp.com/send?text={texto_encoded_rutas}"
                         
@@ -749,6 +731,6 @@ with tab3:
                             </a>
                         """, unsafe_allow_html=True)
                 else:
-                    st.warning("⚠️ No se pudieron extraer los datos. Revisa el formato del PDF.")
+                    st.warning("⚠️ No se pudieron extraer datos del PDF. Verifica el archivo.")
             except Exception as e:
                 st.error(f"⚠️ Ocurrió un error al procesar el PDF: {e}")
