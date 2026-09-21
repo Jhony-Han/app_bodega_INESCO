@@ -11,7 +11,7 @@ from openpyxl.utils import get_column_letter
 import urllib.parse
 
 # ---------------------------------------------------------
-# 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS (DISEÑO CLÁSICO INESCO)
+# 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Inesco | Gestión y Extracción",
@@ -72,7 +72,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Encabezado clásico
 col_h1, col_h2, col_h3 = st.columns([1, 6, 1])
 with col_h1:
     st.markdown("<h1 style='text-align: center; font-size: 2.5rem; margin-top: 20px;'>🥤</h1>", unsafe_allow_html=True)
@@ -87,7 +86,7 @@ with col_h3:
     st.markdown("<h1 style='text-align: center; font-size: 2.5rem; margin-top: 20px;'>🚚</h1>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 2. GESTIÓN DE DATOS EN SESIÓN Y CATÁLOGO PERSISTENTE
+# 2. GESTIÓN DE DATOS EN SESIÓN Y CATÁLOGO
 # ---------------------------------------------------------
 if "vencimientos" not in st.session_state:
     st.session_state.vencimientos = []
@@ -241,7 +240,7 @@ if "catalogo" not in st.session_state:
     st.session_state.catalogo = CATALOGO_INICIAL
 
 # ---------------------------------------------------------
-# 3. EXPORTADOR EXCEL PROFESIONAL (CON SUMATORIAS Y METADATOS)
+# 3. EXPORTADOR EXCEL PROFESIONAL (ESTILO INESCO MEJORADO)
 # ---------------------------------------------------------
 def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     wb = Workbook()
@@ -250,8 +249,8 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     red_title_font = Font(color="FFFFFF", bold=True, size=13, name="Calibri")
     title_fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
     
-    sub_font = Font(color="333333", italic=True, size=10, name="Calibri")
-    sub_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+    sub_font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
+    sub_fill = PatternFill(start_color="ED7D31", end_color="ED7D31", fill_type="solid") # Resaltador llamativo para el encabezado de ruta
     
     header_fill = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid")
     header_font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
@@ -272,14 +271,17 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     )
     
     first_sheet = True
-    for nombre_ruta, df_r in rutas_dict.items():
+    for nombre_ruta, r_info in rutas_dict.items():
         safe_title = re.sub(r'[\\/*?:[\]]', '_', nombre_ruta)
         ws = default_sheet if first_sheet else wb.create_sheet(title=safe_title[:30])
         first_sheet = False
             
+        df_r = r_info["df"]
+        header_text = r_info["header"]
         num_cols = len(df_r.columns)
         titulo_reporte = "DISTRIBUCIONES INESCO - REPORTE TOTAL DE RUTA" if es_reporte_rutas else "DISTRIBUCIONES INESCO - REPORTE DE VENCIMIENTOS"
         
+        # Fila 1: Título principal
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(num_cols, 3))
         cell_t = ws.cell(row=1, column=1, value=titulo_reporte)
         cell_t.font = red_title_font
@@ -289,8 +291,9 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
             ws.cell(row=1, column=col).border = thin_border
             ws.cell(row=1, column=col).fill = title_fill
         
+        # Fila 2: Encabezado de ruta con resaltador (removido del cuerpo de la tabla)
         ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max(num_cols, 3))
-        cell_s = ws.cell(row=2, column=1, value=f"Fecha de Exportación: {fecha_str}    |    Sección: {nombre_ruta}")
+        cell_s = ws.cell(row=2, column=1, value=f"📌 {header_text}    (Fecha de Exportación: {fecha_str})")
         cell_s.font = sub_font
         cell_s.fill = sub_fill
         cell_s.alignment = Alignment(horizontal="center", vertical="center")
@@ -299,9 +302,10 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
             ws.cell(row=2, column=col).fill = sub_fill
         
         ws.row_dimensions[1].height = 28
-        ws.row_dimensions[2].height = 22
+        ws.row_dimensions[2].height = 24
         ws.row_dimensions[3].height = 10
         
+        # Fila 4: Cabeceras de la tabla
         ws.row_dimensions[4].height = 24
         for col_idx, col_name in enumerate(df_r.columns, start=1):
             c = ws.cell(row=4, column=col_idx, value=col_name)
@@ -310,26 +314,36 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
             c.border = thin_border
             c.alignment = Alignment(horizontal="center", vertical="center")
             
+        # Filas de datos
         for row_idx, row_data in enumerate(df_r.values, start=5):
             ws.row_dimensions[row_idx].height = 20
             is_even = (row_idx % 2 == 0)
             row_fill = zebra_fill if is_even else white_fill
             
             for col_idx, val in enumerate(row_data, start=1):
-                c = ws.cell(row=row_idx, column=col_idx, value=val)
+                c = ws.cell(row=row_idx, column=col_idx)
                 c.border = thin_border
                 c.fill = row_fill
                 c.font = Font(name="Calibri", size=11)
                 
                 col_header_name = str(df_r.columns[col_idx-1]).lower()
-                if "sku" in col_header_name or "ruta" in col_header_name or "serie" in col_header_name or "fecha" in col_header_name or "página" in col_header_name or "cajas" in col_header_name or "unidades" in col_header_name:
+                
+                # Forzar formato numérico limpio en Cajas y Unidades para que Excel sume perfecto
+                if "cajas" in col_header_name or "unidades" in col_header_name:
+                    try:
+                        c.value = int(val) if val != "" and val is not None else 0
+                    except:
+                        c.value = 0
                     c.alignment = Alignment(horizontal="center", vertical="center")
-                    if "cajas" in col_header_name or "unidades" in col_header_name:
-                        c.number_format = '#,##0'
+                    c.number_format = '#,##0'
+                elif "sku" in col_header_name or "ruta" in col_header_name or "serie" in col_header_name:
+                    c.value = val
+                    c.alignment = Alignment(horizontal="center", vertical="center")
                 else:
+                    c.value = val
                     c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
                     
-        # Fila de Totales si es reporte de rutas
+        # Fila de Totales con fórmulas limpias aseguradas
         if es_reporte_rutas and not df_r.empty:
             last_row = 4 + len(df_r)
             total_row_idx = last_row + 1
@@ -367,7 +381,7 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 4. PROCESAMIENTO DE PDF DE RUTAS
+# 4. PROCESAMIENTO DE PDF DE RUTAS (LIMPIEZA DE FILAS DE TEXTO)
 # ---------------------------------------------------------
 def procesar_pdf_rutas(pdf_file):
     routes_data = {}
@@ -375,7 +389,7 @@ def procesar_pdf_rutas(pdf_file):
     
     with pdfplumber.open(pdf_file) as pdf:
         current_route = "ML3E51"
-        current_header_info = ""
+        current_header_info = "Ruta / No.de Carga: ML3E51"
         
         for page_idx, page in enumerate(pdf.pages, start=1):
             texto_pagina = page.extract_text()
@@ -389,26 +403,26 @@ def procesar_pdf_rutas(pdf_file):
                 if not l_str:
                     continue
                 
-                # Detectar ruta actual
+                # Detectar ruta actual y actualizar encabezado global (pero NO añadirla como producto)
                 m_ruta = re.search(r'ML3E5[1-3]', l_str)
                 if m_ruta:
                     current_route = m_ruta.group(0)
                 
-                # Capturar el texto del encabezado
                 if "Ruta" in l_str or "No.de Carga" in l_str or "Fecha de Entrega" in l_str:
                     current_header_info = l_str
+                    continue # Omitimos que esta línea pase a la tabla de productos
                 
-                # Buscar SKU de 5 o 6 dígitos
+                # Buscar SKU válido de 5 o 6 dígitos
                 m_sku = re.search(r'\b(\d{5,6})\b', l_str)
                 if m_sku:
                     sku = m_sku.group(1)
                     
-                    # Búsqueda de cantidades (Cajas / Unidades)
+                    # Extracción precisa de cantidades Cajas / Unidades
                     m_qty = re.search(r'[\$\s]*(\d+)\s*[/\\-]\s*(\d+)', l_str)
                     cajas = int(m_qty.group(1)) if m_qty else 0
                     unidades = int(m_qty.group(2)) if m_qty else 0
                     
-                    # Limpiar descripción eliminando el SKU y las cantidades detectadas
+                    # Limpiar descripción eliminando SKU y números de cantidad
                     desc_limpia = l_str.replace(sku, "")
                     if m_qty:
                         desc_limpia = desc_limpia.replace(m_qty.group(0), "")
@@ -418,7 +432,7 @@ def procesar_pdf_rutas(pdf_file):
                     
                     if current_route not in routes_data:
                         routes_data[current_route] = {
-                            "header": current_header_info or f"Ruta / No.de Carga: {current_route}",
+                            "header": current_header_info,
                             "items": []
                         }
                     
@@ -486,23 +500,14 @@ with tab1:
     if st.session_state.modo_captura == "Tomar datos con voz":
         st.markdown("""
             <div style="background-color: #F8D7DA; padding: 10px; border-radius: 8px; border-left: 5px solid #E41E2B; margin-bottom: 15px; color: #721C24;">
-                <strong>🎙️ Modo Dictado / Búsqueda Rápida:</strong> Usa el icono de micrófono del teclado de tu celular o PC, o escribe el nombre del producto para filtrar y autocompletar el SKU.
+                <strong>🎙️ Modo Dictado / Búsqueda Rápida:</strong> Usa el icono de micrófono o escribe el nombre del producto para autocompletar.
             </div>
         """, unsafe_allow_html=True)
         
         filtro_voz = st.text_input("🎤 Dicta o escribe el producto:", value=st.session_state.voz_temp_input, placeholder="Ej: Coca-Cola 350, Brisa, Quatro...", key="input_voz_busqueda")
         st.session_state.voz_temp_input = filtro_voz
-
-        if filtro_voz:
-            skus_filtrados = [s for s in skus_opt if filtro_voz.lower() in s.lower()]
-        else:
-            skus_filtrados = skus_opt
+        skus_filtrados = [s for s in skus_opt if filtro_voz.lower() in s.lower()] if filtro_voz else skus_opt
     else:
-        st.markdown("""
-            <div style="background-color: #D1ECF1; padding: 10px; border-radius: 8px; border-left: 5px solid #0C5460; margin-bottom: 15px; color: #0C5460;">
-                <strong>⌨️ Modo Manual Activo:</strong> Selecciona el producto directamente de la lista desplegable.
-            </div>
-        """, unsafe_allow_html=True)
         skus_filtrados = skus_opt
 
     c1, c2 = st.columns([2, 1])
@@ -515,7 +520,6 @@ with tab1:
         if sel_sku:
             s_code, s_desc = sel_sku.split(" - ", 1)
             fecha_formateada = fecha_seleccionada.strftime("%d/%m/%Y")
-
             existe_idx = next((i for i, r in enumerate(st.session_state.vencimientos) if r["SKU"] == s_code), None)
             
             if existe_idx is not None:
@@ -530,13 +534,11 @@ with tab1:
                 })
             
             st.toast("¡Guardado correctamente!", icon="✅")
-            st.markdown('<div class="success-box">✅ ¡Guardado con éxito! El nuevo registro aparece de primero en la lista.</div>', unsafe_allow_html=True)
             st.rerun()
         else:
             st.warning("⚠️ Debes seleccionar un SKU primero.")
 
-    st.markdown('<p class="sub-title">📋 Registros Guardados (El más reciente aparece de primero)</p>', unsafe_allow_html=True)
-    
+    st.markdown('<p class="sub-title">📋 Registros Guardados</p>', unsafe_allow_html=True)
     if st.session_state.vencimientos:
         for idx, row in enumerate(st.session_state.vencimientos):
             col_a, col_b, col_c, col_d = st.columns([2, 4, 3, 2])
@@ -560,10 +562,9 @@ with tab1:
 
         st.divider()
         df_venc_out = pd.DataFrame(st.session_state.vencimientos)[["SKU", "Descripción del Producto", "Fecha Vencimiento"]]
-        excel_bytes = exportar_excel_multiruta({"Vencimientos": df_venc_out}, fecha_str=date.today().strftime('%d/%m/%Y'), es_reporte_rutas=False)
+        excel_bytes = exportar_excel_multiruta({"Vencimientos": {"df": df_venc_out, "header": "Reporte de Vencimientos"}}, fecha_str=date.today().strftime('%d/%m/%Y'), es_reporte_rutas=False)
         
         col_dl1, col_dl2 = st.columns([1, 1])
-        
         with col_dl1:
             st.download_button(
                 label="📥 Descargar Reporte en Excel",
@@ -572,49 +573,37 @@ with tab1:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="dl_venc_excel"
             )
-            
         with col_dl2:
-            texto_wa = f"Hola, comparto el reporte de vencimientos de Distribuciones Inesco del {date.today().strftime('%d/%m/%Y')}."
-            texto_encoded = urllib.parse.quote(texto_wa)
-            url_whatsapp = f"https://api.whatsapp.com/send?text={texto_encoded}"
-            
+            texto_wa = urllib.parse.quote(f"Hola, comparto el reporte de vencimientos de Distribuciones Inesco del {date.today().strftime('%d/%m/%Y')}.")
             st.markdown(f"""
-                <a href="{url_whatsapp}" target="_blank" style="text-decoration: none;">
-                    <div style="background-color: #25D366; color: white; padding: 10px 15px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 0.95rem; box-shadow: 0px 4px 10px rgba(37, 211, 102, 0.3);">
+                <a href="https://api.whatsapp.com/send?text={texto_wa}" target="_blank" style="text-decoration: none;">
+                    <div style="background-color: #25D366; color: white; padding: 10px 15px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 0.95rem;">
                         💬 Abrir WhatsApp con Aviso
                     </div>
                 </a>
             """, unsafe_allow_html=True)
-    else:
-        st.info("No hay registros guardados todavía. Sube tu archivo de respaldo o agrega un producto.")
 
-# --- TAB 2: ADMINISTRAR SKUS (PERSISTENTE) ---
+# --- TAB 2: ADMINISTRAR SKUS ---
 with tab2:
-    st.markdown('<p class="sub-title">⚙️ Agregar o Eliminar SKUs del Catálogo (Permanente)</p>', unsafe_allow_html=True)
-    
+    st.markdown('<p class="sub-title">⚙️ Administrar Catálogo de SKUs</p>', unsafe_allow_html=True)
     col_add1, col_add2 = st.columns([1, 2])
     with col_add1:
-        nuevo_sku = st.text_input("Nuevo Código SKU:", key="input_new_sku")
+        nuevo_sku = st.text_input("Código SKU:", key="input_new_sku")
     with col_add2:
-        nueva_desc = st.text_input("Descripción del Producto:", key="input_new_desc")
+        nueva_desc = st.text_input("Descripción:", key="input_new_desc")
         
-    if st.button("➕ Agregar Nuevo SKU al Catálogo", key="btn_add_sku"):
+    if st.button("➕ Agregar SKU", key="btn_add_sku"):
         if nuevo_sku and nueva_desc:
-            sku_limpio = nuevo_sku.strip()
-            desc_limpia = nueva_desc.strip()
-            existe = any(item['sku'] == sku_limpio for item in st.session_state.catalogo)
-            if not existe:
-                st.session_state.catalogo.append({"sku": sku_limpio, "descripcion": desc_limpia})
-                st.success(f"✅ SKU {sku_limpio} agregado permanentemente. Recuerda descargar tu respaldo JSON para conservarlo.")
+            if not any(item['sku'] == nuevo_sku.strip() for item in st.session_state.catalogo):
+                st.session_state.catalogo.append({"sku": nuevo_sku.strip(), "descripcion": nueva_desc.strip()})
+                st.success("✅ SKU agregado permanentemente.")
                 st.rerun()
             else:
-                st.warning("⚠️ Este código SKU ya se encuentra registrado en el catálogo.")
+                st.warning("⚠️ El SKU ya existe.")
         else:
-            st.error("Por favor completa tanto el SKU como la Descripción.")
+            st.error("Completa ambos campos.")
 
     st.divider()
-    st.write(f"**Catálogo Actual ({len(st.session_state.catalogo)} SKUs):**")
-    
     for idx, item in enumerate(st.session_state.catalogo):
         c_k, c_d, c_b = st.columns([2, 5, 2])
         c_k.write(f"**{item['sku']}**")
@@ -626,25 +615,27 @@ with tab2:
 # --- TAB 3: EXTRACCIÓN PDF (RUTAS) ---
 with tab3:
     st.markdown('<p class="sub-title">📄 Extracción Total de Rutas y Cargues de FEMSA</p>', unsafe_allow_html=True)
-    st.info("ℹ️ Sube tu archivo PDF de cargue para convertirlo de manera exacta y completa en un reporte de Excel con todas las rutas, números de serie, fechas, páginas, SKUs, descripciones, cajas, unidades y las sumatorias totales.")
+    st.info("ℹ️ Sube tu PDF de cargue: las líneas de texto de rutas se han removido limpiamente del cuerpo de los productos y se han colocado como un encabezado superior resaltado. Además, las sumatorias de unidades y cajas ahora calculan de forma exacta.")
     
     archivo_pdf = st.file_uploader("📂 Seleccionar archivo PDF de Rutas", type=["pdf"], key="uploader_pdf_rutas")
     
     if archivo_pdf is not None:
         if st.button("🚀 Procesar PDF y Generar Excel", key="btn_procesar_pdf"):
-            with st.spinner("🔄 Procesando el archivo PDF y extrayendo las rutas..."):
+            with st.spinner("🔄 Procesando PDF y limpiando estructura..."):
                 try:
                     datos_rutas = procesar_pdf_rutas(archivo_pdf)
                     
                     if datos_rutas:
                         dfs_para_excel = {}
                         for r_name, r_info in datos_rutas.items():
-                            df_ruta = pd.DataFrame(r_info["items"])
-                            dfs_para_excel[r_name] = df_ruta
+                            dfs_para_excel[r_name] = {
+                                "df": pd.DataFrame(r_info["items"]),
+                                "header": r_info["header"]
+                            }
                             
                         excel_rutas_bytes = exportar_excel_multiruta(dfs_para_excel, fecha_str=date.today().strftime('%d/%m/%Y'), es_reporte_rutas=True)
                         
-                        st.success(f"✅ ¡Proceso exitoso! Se detectaron {len(datos_rutas)} rutas en el documento.")
+                        st.success(f"✅ ¡Proceso exitoso! Se detectaron {len(datos_rutas)} rutas limpias.")
                         
                         st.download_button(
                             label="📥 Descargar Reporte Consolidado de Rutas (Excel)",
@@ -659,6 +650,6 @@ with tab3:
                                 st.write(f"**Encabezado:** {r_info['header']}")
                                 st.dataframe(pd.DataFrame(r_info["items"]), use_container_width=True)
                     else:
-                        st.warning("⚠️ No se pudieron extraer datos válidos del PDF. Verifica que el formato coincida con los documentos de cargue.")
+                        st.warning("⚠️ No se extrajeron datos válidos del PDF.")
                 except Exception as e:
-                    st.error(f"⚠️ Ocurrió un error al procesar el archivo PDF: {e}")
+                    st.error(f"⚠️ Error al procesar el archivo: {e}")
