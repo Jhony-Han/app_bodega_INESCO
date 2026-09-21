@@ -367,14 +367,14 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# ---------------------------------------------------------
-# 4. PARSER DIRECTO Y LIMPIO (DESDE EL SKU EN ADELANTE)
-# ---------------------------------------------------------
 def procesar_pdf_rutas(pdf_file):
-    datos_totales = []
+    routes_data = {}
     mapa_catalogo = {item["sku"]: item["descripcion"] for item in st.session_state.catalogo}
     
     with pdfplumber.open(pdf_file) as pdf:
+        current_route = "ML3E51"
+        current_header_info = ""
+        
         for page_idx, page in enumerate(pdf.pages, start=1):
             texto_pagina = page.extract_text()
             if not texto_pagina:
@@ -387,12 +387,21 @@ def procesar_pdf_rutas(pdf_file):
                 if not l_str:
                     continue
                 
-                # Buscar SKU de 5 o 6 dígitos
+                # Detectar ruta actual
+                m_ruta = re.search(r'ML3E5[1-3]', l_str)
+                if m_ruta:
+                    current_route = m_ruta.group(0)
+                
+                # Capturar el texto del encabezado (resaltado en amarillo)
+                if "Ruta" in l_str or "No.de Carga" in l_str or "Fecha de Entrega" in l_str:
+                    current_header_info = l_str
+                
+                # Buscar SKU de 5 o 6 dígitos (ignora índices iniciales o finales)
                 m_sku = re.search(r'\b(\d{5,6})\b', l_str)
                 if m_sku:
                     sku = m_sku.group(1)
                     
-                    # Búsqueda flexible de cantidades (Cajas / Unidades) con barras, espacios o símbolos
+                    # Búsqueda de cantidades (Cajas / Unidades)
                     m_qty = re.search(r'[\$\s]*(\d+)\s*[/\\-]\s*(\d+)', l_str)
                     cajas = int(m_qty.group(1)) if m_qty else 0
                     unidades = int(m_qty.group(2)) if m_qty else 0
@@ -403,21 +412,23 @@ def procesar_pdf_rutas(pdf_file):
                         desc_limpia = desc_limpia.replace(m_qty.group(0), "")
                     desc_limpia = re.sub(r'[\$\|\(\)]', '', desc_limpia).strip()
                     
-                    # Obtener descripción final limpia
                     descripcion_final = desc_limpia if len(desc_limpia) > 3 else mapa_catalogo.get(sku, "PRODUCTO FEMSA")
                     
-                    datos_totales.append({
+                    # Inicializar estructura de la ruta si no existe
+                    if current_route not in routes_data:
+                        routes_data[current_route] = {
+                            "header": current_header_info or f"Ruta / No.de Carga: {current_route}",
+                            "items": []
+                        }
+                    
+                    routes_data[current_route]["items"].append({
                         "SKU": sku,
                         "Descripción del Producto": descripcion_final,
                         "Cajas": cajas,
                         "Unidades": unidades
                     })
-            
-    if datos_totales:
-        df_final = pd.DataFrame(datos_totales)
-        return {"Cargue_FEMSA": df_final}
-        
-    return {}
+                    
+    return routes_data
 
 # ---------------------------------------------------------
 # 5. PESTAÑAS Y NAVEGACIÓN
