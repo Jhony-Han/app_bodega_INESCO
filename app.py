@@ -367,14 +367,14 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 4. PARSER TOTAL Y EXHAUSTIVO (EXTRACCIÓN COMPLETA SIN EXCLUSIONES)
+# ---------------------------------------------------------
+# 4. PARSER ULTRA FLEXIBLE (DETECTA SKUS Y CANTIDADES EN CUALQUIER DISEÑO)
 # ---------------------------------------------------------
 def procesar_pdf_rutas(pdf_file):
     rutas_encontradas = {}
     mapa_catalogo = {item["sku"]: item["descripcion"] for item in st.session_state.catalogo}
     
     with pdfplumber.open(pdf_file) as pdf:
-        # Recorrer página por página para capturar absolutamente todo en orden
         for page_idx, page in enumerate(pdf.pages, start=1):
             texto_pagina = page.extract_text()
             if not texto_pagina:
@@ -399,89 +399,42 @@ def procesar_pdf_rutas(pdf_file):
                     fecha_doc = m_fec.group(1)
             
             datos_pagina = []
-            sku_actual = None
-            desc_acumulada = []
             
             for linea in lineas:
                 l_str = linea.strip()
                 if not l_str:
                     continue
-                    
-                # 1. Formato compacto de línea: SKU | Descripción | Cajas/Unidades
-                match_compacto = re.search(r'^(\d{5,6})\s*\|\s*(.*?)\s*\|\s*\$?(\d*)/(\d*)', l_str)
-                if match_compacto:
-                    if sku_actual:
-                        datos_pagina.append({
-                            "Ruta": nombre_ruta, "No. Serie": num_serie, "Fecha": fecha_doc, "Página": f"Pág. {page_idx}",
-                            "SKU": sku_actual,
-                            "Descripción del Producto": " ".join(desc_acumulada).replace('|', '').strip() or mapa_catalogo.get(sku_actual, "PRODUCTO FEMSA"),
-                            "Cajas": 0, "Unidades": 0
-                        })
-                        sku_actual = None
-                        desc_acumulada = []
-                        
-                    sku = match_compacto.group(1)
-                    desc = match_compacto.group(2).replace('|', '').strip()
-                    c_str = match_compacto.group(3)
-                    u_str = match_compacto.group(4)
-                    cajas = int(c_str) if c_str.isdigit() else 0
-                    unidades = int(u_str) if u_str.isdigit() else 0
-                    
-                    datos_pagina.append({
-                        "Ruta": nombre_ruta, "No. Serie": num_serie, "Fecha": fecha_doc, "Página": f"Pág. {page_idx}",
-                        "SKU": sku,
-                        "Descripción del Producto": desc if desc else mapa_catalogo.get(sku, "PRODUCTO FEMSA"),
-                        "Cajas": cajas, "Unidades": unidades
-                    })
-                    continue
-                    
-                # 2. SKU solitario en la línea
-                if re.fullmatch(r'\d{5,6}', l_str):
-                    if sku_actual:
-                        datos_pagina.append({
-                            "Ruta": nombre_ruta, "No. Serie": num_serie, "Fecha": fecha_doc, "Página": f"Pág. {page_idx}",
-                            "SKU": sku_actual,
-                            "Descripción del Producto": " ".join(desc_acumulada).replace('|', '').strip() or mapa_catalogo.get(sku_actual, "PRODUCTO FEMSA"),
-                            "Cajas": 0, "Unidades": 0
-                        })
-                    sku_actual = l_str
-                    desc_acumulada = []
-                    continue
-                    
-                # 3. Línea con cantidades (ej: 24/0, $24/0$, /15) cuando ya tenemos un SKU activo
-                match_qty = re.search(r'\$?(\d*)/(\d*)', l_str)
-                if match_qty and sku_actual:
-                    c_str = match_qty.group(1)
-                    u_str = match_qty.group(2)
-                    cajas = int(c_str) if c_str.isdigit() else 0
-                    unidades = int(u_str) if u_str.isdigit() else 0
-                    
-                    desc_limpia = " ".join(desc_acumulada).replace('|', '').strip()
-                    datos_pagina.append({
-                        "Ruta": nombre_ruta, "No. Serie": num_serie, "Fecha": fecha_doc, "Página": f"Pág. {page_idx}",
-                        "SKU": sku_actual,
-                        "Descripción del Producto": desc_limpia if desc_limpia else mapa_catalogo.get(sku_actual, "PRODUCTO FEMSA"),
-                        "Cajas": cajas, "Unidades": unidades
-                    })
-                    sku_actual = None
-                    desc_acumulada = []
-                    continue
-                    
-                # 4. Si hay SKU activo, acumulamos todo el texto intermedio como su descripción
-                if sku_actual:
-                    limpio = l_str.replace('|', '').strip()
-                    if limpio and not "Pág." in limpio and not "CENTRO:" in limpio and not "Sub-Total" in limpio:
-                        desc_acumulada.append(limpio)
-            
-            # Si quedó algo pendiente en la página
-            if sku_actual:
-                datos_pagina.append({
-                    "Ruta": nombre_ruta, "No. Serie": num_serie, "Fecha": fecha_doc, "Página": f"Pág. {page_idx}",
-                    "SKU": sku_actual,
-                    "Descripción del Producto": " ".join(desc_acumulada).replace('|', '').strip() or mapa_catalogo.get(sku_actual, "PRODUCTO FEMSA"),
-                    "Cajas": 0, "Unidades": 0
-                })
                 
+                # Buscar si la línea contiene un SKU válido de 5 o 6 dígitos
+                m_sku = re.search(r'\b(\d{5,6})\b', l_str)
+                if m_sku:
+                    sku = m_sku.group(1)
+                    
+                    # Buscar patrón de cantidades tipo Cajas/Unidades (ej: 24/0, 10/2) en la misma línea
+                    m_qty = re.search(r'(\d+)\s*/\s*(\d+)', l_str)
+                    cajas = int(m_qty.group(1)) if m_qty else 0
+                    unidades = int(m_qty.group(2)) if m_qty else 0
+                    
+                    # Limpiar el resto de la línea para extraer la descripción del producto
+                    desc_limpia = l_str.replace(sku, "")
+                    if m_qty:
+                        desc_limpia = desc_limpia.replace(m_qty.group(0), "")
+                    desc_limpia = re.sub(r'[\$\|\(\)]', '', desc_limpia).strip()
+                    
+                    # Si la descripción quedó muy corta o vacía, usar el catálogo oficial
+                    descripcion_final = desc_limpia if len(desc_limpia) > 3 else mapa_catalogo.get(sku, "PRODUCTO FEMSA")
+                    
+                    datos_pagina.append({
+                        "Ruta": nombre_ruta, 
+                        "No. Serie": num_serie, 
+                        "Fecha": fecha_doc, 
+                        "Página": f"Pág. {page_idx}",
+                        "SKU": sku,
+                        "Descripción del Producto": descripcion_final,
+                        "Cajas": cajas, 
+                        "Unidades": unidades
+                    })
+            
             if datos_pagina:
                 df_pag = pd.DataFrame(datos_pagina)
                 clave_ruta = f"{nombre_ruta}"
