@@ -231,7 +231,7 @@ if "catalogo" not in st.session_state:
     st.session_state.catalogo = CATALOGO_INICIAL
 
 # ---------------------------------------------------------
-# 3. EXPORTADOR EXCEL PROFESIONAL (RUTAS - INTACTO)
+# 3. EXPORTADOR EXCEL PROFESIONAL (RUTAS)
 # ---------------------------------------------------------
 def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     wb = Workbook()
@@ -366,10 +366,87 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 4. FUNCIONES NUEVAS: CLASIFICACIÓN DE TAMAÑOS Y VENCIMIENTOS MULTILOTE
+# 4. FUNCIÓN CLAVE DE EXTRACCIÓN DE PDF DE RUTAS (RESTAURADA Y GARANTIZADA)
+# ---------------------------------------------------------
+def procesar_pdf_rutas(pdf_file):
+    routes_data = {}
+    mapa_catalogo = {item["sku"]: item["descripcion"] for item in st.session_state.catalogo}
+    
+    with pdfplumber.open(pdf_file) as pdf:
+        current_route = "ML3E51"
+        current_header_info = "Ruta / No.de Carga: ML3E51"
+        
+        for page_idx, page in enumerate(pdf.pages, start=1):
+            texto_pagina = page.extract_text()
+            if not texto_pagina:
+                continue
+                
+            lineas = texto_pagina.split('\n')
+            
+            for linea in lineas:
+                l_str = linea.strip()
+                if not l_str:
+                    continue
+                
+                m_ruta = re.search(r'ML3E5[1-3]', l_str)
+                if m_ruta:
+                    current_route = m_ruta.group(0)
+                
+                if "Ruta" in l_str or "No.de Carga" in l_str or "Fecha de Entrega" in l_str:
+                    current_header_info = l_str
+                    continue 
+                
+                m_sku = re.search(r'\b(\d{5,6})\b', l_str)
+                if m_sku:
+                    sku = m_sku.group(1)
+                    cajas = 0
+                    unidades = 0
+                    
+                    m_slash = re.search(r'(?:^|\s)(\d+)?\s*/\s*(\d+)', l_str)
+                    if m_slash:
+                        c_str = m_slash.group(1)
+                        u_str = m_slash.group(2)
+                        cajas = int(c_str) if c_str else 0
+                        unidades = int(u_str) if u_str else 0
+                    else:
+                        m_qty = re.search(r'[\$\s]*(\d+)\s*[/\\-]\s*(\d+)', l_str)
+                        if m_qty:
+                            cajas = int(m_qty.group(1))
+                            unidades = int(m_qty.group(2))
+                    
+                    desc_limpia = l_str.replace(sku, "")
+                    if m_slash:
+                        desc_limpia = desc_limpia.replace(m_slash.group(0), "")
+                    
+                    desc_limpia = re.sub(r'\s+\d+\s*[/\\-]\s*\d+\s*$', '', desc_limpia)
+                    desc_limpia = re.sub(r'\s+[/\\-]\s*\d+\s*$', '', desc_limpia)
+                    desc_limpia = re.sub(r'\b\d{5,7}\b\s*_+', '', desc_limpia)
+                    desc_limpia = re.sub(r'\b\d{5,7}\b', '', desc_limpia)
+                    desc_limpia = re.sub(r'_+', '', desc_limpia)
+                    desc_limpia = re.sub(r'[\$\|\(\)]', '', desc_limpia).strip()
+                    
+                    descripcion_final = desc_limpia if len(desc_limpia) > 3 else mapa_catalogo.get(sku, "PRODUCTO FEMSA")
+                    
+                    if current_route not in routes_data:
+                        routes_data[current_route] = {
+                            "header": current_header_info,
+                            "items": []
+                        }
+                    
+                    routes_data[current_route]["items"].append({
+                        "SKU": sku,
+                        "Descripción del Producto": descripcion_final,
+                        "Cajas": cajas,
+                        "Unidades": unidades
+                    })
+                    
+    return routes_data
+
+# ---------------------------------------------------------
+# 5. FUNCIONES PARA VENCIMIENTOS (LIMPIO Y PROFESIONAL)
 # ---------------------------------------------------------
 def obtener_orden_tamano(descripcion):
-    """Clasifica los productos por tamaños basándose en los catálogos y formatos de FEMSA."""
+    """Clasifica los productos por tamaños basándose en las presentaciones de FEMSA."""
     desc = descripcion.upper()
     if "8 OZ" in desc or "10 OZ" in desc or "10ONZ" in desc:
         return 1  # Vidrios pequeños / 8 oz / 10 oz
@@ -380,24 +457,18 @@ def obtener_orden_tamano(descripcion):
     elif "400ML" in desc or "400 ML" in desc or "400PET" in desc:
         return 4  # Presentaciones de 400 ml
     elif "600ML" in desc or "600 ML" in desc or "500ML" in desc or "500 ML" in desc or "625ML" in desc:
-        return 5  # Presentaciones de 500/600 ml (Aguas, Powerade, etc.)
+        return 5  # Presentaciones de 500/600 ml
     elif "LAT" in desc or "269ML" in desc or "330ML" in desc or "473ML" in desc:
         return 6  # Latas y Monster
     elif "1 LT" in desc or "1L" in desc or "1 LITRO" in desc or "1.5" in desc or "1,5" in desc or "1.2" in desc or "946ML" in desc:
-        return 7  # Medianos / 1L / 1.5L / Frutal grande
+        return 7  # Medianos / 1L / 1.5L
     elif "2.5" in desc or "2,5" in desc or "3 LT" in desc or "3L" in desc or "3 LITROS" in desc or "COMBO" in desc or "2 PK" in desc or "3 PACK" in desc:
         return 8  # Familiares / 3 Litros / Combos
     elif "188ML" in desc or "280ML" in desc or "280 ML" in desc or "ECOFLEX" in desc:
         return 9  # Formatos pequeños / Trp
     else:
-        return 10 # Snacks, golosinas, atún, galletas y kits
+        return 10 # Snacks, golosinas y kits
 
-# ---------------------------------------------------------
-# FUNCIONES ACTUALIZADAS: ALERTAS VISUALES MÁS FUERTES Y CANTIDAD OPCIONAL
-# ---------------------------------------------------------
-# ---------------------------------------------------------
-# FUNCIONES REESTRUCTURADAS: DISEÑO PROFESIONAL Y ORDEN DE COLUMNAS
-# ---------------------------------------------------------
 def calcular_estado_vencimiento(fecha_venc_str):
     """Calcula días restantes y define el estado de alerta."""
     try:
@@ -416,7 +487,7 @@ def calcular_estado_vencimiento(fecha_venc_str):
         return "⚪ DESCONOCIDO", 9999
 
 def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
-    """Exporta un reporte profesional donde solo la celda de alerta lleva color y el resto se mantiene limpio."""
+    """Exporta reporte profesional manteniendo el producto limpio y coloreando solo la alerta."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Vencimientos"
@@ -433,7 +504,6 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
     
     white_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
     
-    # Colores sutiles y profesionales exclusivos para la celda de alerta
     fill_rojo_celda = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
     font_rojo_celda = Font(name="Calibri", size=11, color="9C0006", bold=True)
     
@@ -467,7 +537,6 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
     ws.row_dimensions[3].height = 10
     ws.row_dimensions[4].height = 24
 
-    # Nuevo orden de columnas solicitado
     headers = ["SKU", "Descripción del Producto", "Fecha Vencimiento", "Cantidad", "Estado de Alerta", "Días Restantes"]
     for col_idx, h_name in enumerate(headers, start=1):
         c = ws.cell(row=4, column=col_idx, value=h_name)
@@ -495,7 +564,6 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
     for row_idx, r_data in enumerate(datos_ordenados, start=5):
         ws.row_dimensions[row_idx].height = 20
         
-        # Definir color de celda de alerta
         if r_data["Dias"] < 0 or r_data["Dias"] <= 30:
             f_fill, f_font = fill_rojo_celda, font_rojo_celda
         elif r_data["Dias"] <= 60:
@@ -516,7 +584,6 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
             c = ws.cell(row=row_idx, column=col_idx, value=val)
             c.border = thin_border
             
-            # El producto, fecha y cantidad van con fondo blanco limpio y profesional
             if col_idx in [1, 2, 3, 4]:
                 c.fill = white_fill
                 c.font = Font(name="Calibri", size=11, color="000000")
@@ -524,14 +591,10 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
                     c.alignment = Alignment(horizontal="center", vertical="center")
                 else:
                     c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-            
-            # Únicamente la columna de "Estado de Alerta" (columna 5) lleva el color de advertencia
             elif col_idx == 5:
                 c.fill = f_fill
                 c.font = f_font
                 c.alignment = Alignment(horizontal="center", vertical="center")
-            
-            # Días restantes con fondo blanco y centrado
             else:
                 c.fill = white_fill
                 c.font = Font(name="Calibri", size=11, color="000000")
@@ -545,12 +608,12 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
     output = io.BytesIO()
     wb.save(output)
     return output.getvalue()
+
 # ---------------------------------------------------------
 # 6. PESTAÑAS Y NAVEGACIÓN
 # ---------------------------------------------------------
 tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF (Rutas)"])
 
-# --- TAB 1: FECHAS DE VENCIMIENTO (ACTUALIZADA CON MULTILOTE Y TAMAÑOS) ---
 # --- TAB 1: FECHAS DE VENCIMIENTO ---
 with tab1:
     st.markdown('<p class="sub-title">➕ Agregar Lote y Fecha de Vencimiento</p>', unsafe_allow_html=True)
@@ -604,7 +667,6 @@ with tab1:
     with c1:
         sel_sku = st.selectbox("Seleccionar Producto:", options=skus_filtrados, index=0 if len(skus_filtrados) == 1 else None, placeholder="🔎 Buscar SKU...", key="select_sku_venc")
     with c2:
-        # Cantidad opcional: si se deja en blanco, asigna un guion "-"
         cantidad_input = st.text_input("Cant. (Opcional):", value="", placeholder="Ej: 50 o vacío", key="input_cantidad_lote")
     with c3:
         fecha_seleccionada = st.date_input("Fecha Vencimiento:", value=date.today(), key="input_calendar_venc")
@@ -613,7 +675,6 @@ with tab1:
         if sel_sku:
             s_code, s_desc = sel_sku.split(" - ", 1)
             fecha_formateada = fecha_seleccionada.strftime("%d/%m/%Y")
-            
             cant_final = cantidad_input.strip() if cantidad_input.strip().isdigit() else "-"
             
             nuevo_lote = {
@@ -652,7 +713,6 @@ with tab1:
             dias_rest = row["_dias"]
             estado_txt = row["_estado"]
             
-            # Columnas organizadas visualmente en pantalla: SKU | Producto | Fecha | Cantidad | Estado | Borrar
             col_a, col_b, col_c, col_d, col_e, col_f = st.columns([1.5, 3.0, 2.2, 1.2, 2.2, 1.2])
             col_a.write(f"**{row['SKU']}**")
             col_b.write(row['Descripción del Producto'])
@@ -672,7 +732,6 @@ with tab1:
             cant_mostrada = row.get('Cantidad', '-')
             col_d.write(f"📦 {cant_mostrada}")
             
-            # Solo la columna de alerta muestra el color y estado
             if dias_rest <= 30:
                 col_e.error(f"{estado_txt} ({dias_rest}d)")
             elif dias_rest <= 60:
@@ -709,7 +768,7 @@ with tab1:
                 </a>
             """, unsafe_allow_html=True)
 
-# --- TAB 2: ADMINISTRAR SKUS (INTACTO) ---
+# --- TAB 2: ADMINISTRAR SKUS ---
 with tab2:
     st.markdown('<p class="sub-title">⚙️ Administrar Catálogo de SKUs</p>', unsafe_allow_html=True)
     col_add1, col_add2 = st.columns([1, 2])
@@ -738,10 +797,10 @@ with tab2:
             st.session_state.catalogo.pop(idx)
             st.rerun()
 
-# --- TAB 3: EXTRACCIÓN PDF (RUTAS) (INTACTO) ---
+# --- TAB 3: EXTRACCIÓN PDF (RUTAS) (AQUÍ ESTÁ LA FUNCIÓN RESTAURADA) ---
 with tab3:
     st.markdown('<p class="sub-title">📄 Extracción Total de Rutas y Cargues de FEMSA</p>', unsafe_allow_html=True)
-    st.info("ℹ️ Sube tu PDF de cargue")
+    st.info("ℹ️ Sube tu PDF de cargue para extraer la información por rutas")
     
     archivo_pdf = st.file_uploader("📂 Seleccionar archivo PDF de Rutas", type=["pdf"], key="uploader_pdf_rutas")
     
