@@ -392,7 +392,7 @@ def obtener_orden_tamano(descripcion):
     else:
         return 10 # Snacks, golosinas, atún, galletas y kits
 
-d# ---------------------------------------------------------
+# ---------------------------------------------------------
 # FUNCIONES ACTUALIZADAS: ALERTAS VISUALES MÁS FUERTES Y CANTIDAD OPCIONAL
 # ---------------------------------------------------------
 def calcular_estado_vencimiento(fecha_venc_str):
