@@ -392,8 +392,11 @@ def obtener_orden_tamano(descripcion):
     else:
         return 10 # Snacks, golosinas, atún, galletas y kits
 
+d# ---------------------------------------------------------
+# FUNCIONES ACTUALIZADAS: ALERTAS VISUALES MÁS FUERTES Y CANTIDAD OPCIONAL
+# ---------------------------------------------------------
 def calcular_estado_vencimiento(fecha_venc_str):
-    """Calcula días restantes y define el nivel de alerta (Alerta crítica < 30 días)."""
+    """Calcula días restantes y define niveles de alerta con colores de alto contraste."""
     try:
         f_venc = datetime.strptime(fecha_venc_str, "%d/%m/%Y").date()
         dias_restantes = (f_venc - date.today()).days
@@ -401,26 +404,22 @@ def calcular_estado_vencimiento(fecha_venc_str):
         if dias_restantes < 0:
             return "🔴 VENCIDO", 0, dias_restantes
         elif dias_restantes <= 30:
-            return "🟠 URGENTE (< 30 días)", 1, dias_restantes
+            return "🚨 URGENTE (< 30 días)", 1, dias_restantes
         elif dias_restantes <= 60:
-            return "🟡 PRÓXIMO (< 60 días)", 2, dias_restantes
+            return "⚠️ PRÓXIMO (< 60 días)", 2, dias_restantes
         else:
-            return "🟢 SEGURO", 3, dias_restantes
+            return "✅ SEGURO", 3, dias_restantes
     except:
         return "⚪ DESCONOCIDO", 4, 9999
 
 def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
-    """Exporta el reporte de vencimientos ordenado por urgencia (FIFO) y agrupado por tamaños con alertas."""
+    """Exporta el reporte con colores de alerta fuertes y soporte para cantidad opcional."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Vencimientos"
     
     red_title_font = Font(color="FFFFFF", bold=True, size=13, name="Calibri")
     title_fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
-    
-    sub_font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
-    sub_fill = PatternFill(start_color="ED7D31", end_color="ED7D31", fill_type="solid") # Relleno naranja independiente
-    
     header_fill = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid")
     header_font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
     
@@ -429,11 +428,16 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
         top=Side(style='thin', color='BFBFBF'), bottom=Side(style='thin', color='BFBFBF')
     )
     
-    fill_rojo = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
-    fill_amarillo = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
-    fill_verde = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+    # Colores de Excel de alto contraste para distinguir fácilmente
+    fill_rojo_fuerte = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")     # Rojo claro alerta
+    font_rojo_fuerte = Font(name="Calibri", size=11, color="9C0006", bold=True)
+    
+    fill_amarillo = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")         # Amarillo precaución
+    font_amarillo = Font(name="Calibri", size=11, color="9C6500", bold=True)
+    
+    fill_verde = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")           # Verde seguro
+    font_verde = Font(name="Calibri", size=11, color="006100")
 
-    # Título principal
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=6)
     cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO - CONTROL MULTILOTE DE VENCIMIENTOS")
     cell_t.font = red_title_font
@@ -443,10 +447,10 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
         ws.cell(row=1, column=col).border = thin_border
         ws.cell(row=1, column=col).fill = title_fill
 
-    # Subtítulo (Fila 2) con relleno independiente para evitar conflictos
+    sub_fill = PatternFill(start_color="ED7D31", end_color="ED7D31", fill_type="solid")
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=6)
-    cell_s = ws.cell(row=2, column=1, value=f"📌 Ordenado por Urgencia (FIFO) y Tamaños de Bebidas (Fecha: {fecha_str})")
-    cell_s.font = sub_font
+    cell_s = ws.cell(row=2, column=1, value=f"📌 Reporte Ordenado por Urgencia (FIFO) y Tamaños (Fecha: {fecha_str})")
+    cell_s.font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
     cell_s.fill = sub_fill
     cell_s.alignment = Alignment(horizontal="center", vertical="center")
     for col in range(1, 7):
@@ -473,25 +477,27 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
         datos_procesados.append({
             "SKU": item["SKU"],
             "Descripción del Producto": item["Descripción del Producto"],
-            "Cantidad": item.get("Cantidad", 1),
+            "Cantidad": item.get("Cantidad", "N/A"),
             "Fecha Vencimiento": item["Fecha Vencimiento"],
             "Estado": estado,
             "Dias": dias,
             "TamanoOrden": tamano_orden
         })
 
-    # Orden principal: Días restantes (lo más cercano a vencer arriba), secundario: Tamaño de producto
     datos_ordenados = sorted(datos_procesados, key=lambda x: (x["Dias"], x["TamanoOrden"]))
 
     for row_idx, r_data in enumerate(datos_ordenados, start=5):
         ws.row_dimensions[row_idx].height = 20
         
         if r_data["Dias"] < 0 or r_data["Dias"] <= 30:
-            row_fill = fill_rojo
+            row_fill = fill_rojo_fuerte
+            row_font = font_rojo_fuerte
         elif r_data["Dias"] <= 60:
             row_fill = fill_amarillo
+            row_font = font_amarillo
         else:
             row_fill = fill_verde
+            row_font = font_verde
 
         vals = [
             r_data["SKU"],
@@ -506,11 +512,11 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
             c = ws.cell(row=row_idx, column=col_idx, value=val)
             c.border = thin_border
             c.fill = row_fill
-            c.font = Font(name="Calibri", size=11)
+            c.font = row_font
             
             if col_idx in [1, 3, 4, 5, 6]:
                 c.alignment = Alignment(horizontal="center", vertical="center")
-                if col_idx == 3:
+                if col_idx == 3 and isinstance(val, (int, float)):
                     c.number_format = '#,##0'
             else:
                 c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
