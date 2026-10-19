@@ -231,7 +231,7 @@ if "catalogo" not in st.session_state:
     st.session_state.catalogo = CATALOGO_INICIAL
 
 # ---------------------------------------------------------
-# 3. EXPORTADOR EXCEL PROFESIONAL
+# 3. EXPORTADOR EXCEL PROFESIONAL (RUTAS - INTACTO)
 # ---------------------------------------------------------
 def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     wb = Workbook()
@@ -366,7 +366,160 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 4. PROCESAMIENTO DE PDF DE RUTAS (EXTRACCIÓN Y LIMPIEZA TOTAL)
+# 4. FUNCIONES NUEVAS: CLASIFICACIÓN DE TAMAÑOS Y VENCIMIENTOS MULTILOTE
+# ---------------------------------------------------------
+def obtener_orden_tamano(descripcion):
+    """Clasifica los productos por tamaños basándose en los catálogos y formatos de FEMSA."""
+    desc = descripcion.upper()
+    if "8 OZ" in desc or "10 OZ" in desc or "10ONZ" in desc:
+        return 1  # Vidrios pequeños / 8 oz / 10 oz
+    elif "350ML" in desc or "350 ML" in desc:
+        return 2  # Vidrios de 350 ml
+    elif "250ML" in desc or "250 ML" in desc or "MINI PET" in desc:
+        return 3  # Formatos de 250 ml
+    elif "400ML" in desc or "400 ML" in desc or "400PET" in desc:
+        return 4  # Presentaciones de 400 ml
+    elif "600ML" in desc or "600 ML" in desc or "500ML" in desc or "500 ML" in desc or "625ML" in desc:
+        return 5  # Presentaciones de 500/600 ml (Aguas, Powerade, etc.)
+    elif "LAT" in desc or "269ML" in desc or "330ML" in desc or "473ML" in desc:
+        return 6  # Latas y Monster
+    elif "1 LT" in desc or "1L" in desc or "1 LITRO" in desc or "1.5" in desc or "1,5" in desc or "1.2" in desc or "946ML" in desc:
+        return 7  # Medianos / 1L / 1.5L / Frutal grande
+    elif "2.5" in desc or "2,5" in desc or "3 LT" in desc or "3L" in desc or "3 LITROS" in desc or "COMBO" in desc or "2 PK" in desc or "3 PACK" in desc:
+        return 8  # Familiares / 3 Litros / Combos
+    elif "188ML" in desc or "280ML" in desc or "280 ML" in desc or "ECOFLEX" in desc:
+        return 9  # Formatos pequeños / Trp
+    else:
+        return 10 # Snacks, golosinas, atún, galletas y kits
+
+def calcular_estado_vencimiento(fecha_venc_str):
+    """Calcula días restantes y define el nivel de alerta (Alerta crítica < 30 días)."""
+    try:
+        f_venc = datetime.strptime(fecha_venc_str, "%d/%m/%Y").date()
+        dias_restantes = (f_venc - date.today()).days
+        
+        if dias_restantes < 0:
+            return "🔴 VENCIDO", 0, dias_restantes
+        elif dias_restantes <= 30:
+            return "🟠 URGENTE (< 30 días)", 1, dias_restantes
+        elif dias_restantes <= 60:
+            return "🟡 PRÓXIMO (< 60 días)", 2, dias_restantes
+        else:
+            return "🟢 SEGURO", 3, dias_restantes
+    except:
+        return "⚪ DESCONOCIDO", 4, 9999
+
+def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
+    """Exporta el reporte de vencimientos ordenado por urgencia (FIFO) y agrupado por tamaños con alertas."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Vencimientos"
+    
+    red_title_font = Font(color="FFFFFF", bold=True, size=13, name="Calibri")
+    title_fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
+    header_fill = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
+    
+    thin_border = Border(
+        left=Side(style='thin', color='BFBFBF'), right=Side(style='thin', color='BFBFBF'),
+        top=Side(style='thin', color='BFBFBF'), bottom=Side(style='thin', color='BFBFBF')
+    )
+    
+    fill_rojo = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+    fill_amarillo = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+    fill_verde = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=6)
+    cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO - CONTROL MULTILOTE DE VENCIMIENTOS")
+    cell_t.font = red_title_font
+    cell_t.fill = title_fill
+    cell_t.alignment = Alignment(horizontal="center", vertical="center")
+    for col in range(1, 7):
+        ws.cell(row=1, column=col).border = thin_border
+        ws.cell(row=1, column=col).fill = title_fill
+
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=6)
+    cell_s = ws.cell(row=2, column=1, value=f"📌 Ordenado por Urgencia (FIFO) y Tamaños de Bebidas (Fecha: {fecha_str})")
+    cell_s.font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
+    cell_s.fill = PatternFill(start_color="ED7D31", end_color="ED7D31", fill_type="solid")
+    cell_s.alignment = Alignment(horizontal="center", vertical="center")
+    for col in range(1, 7):
+        ws.cell(row=2, column=col).border = thin_border
+        ws.cell(row=2, column=col).fill = cell_s.fill
+
+    ws.row_dimensions[1].height = 28
+    ws.row_dimensions[2].height = 24
+    ws.row_dimensions[3].height = 10
+    ws.row_dimensions[4].height = 24
+
+    headers = ["SKU", "Descripción del Producto", "Cantidad (Cajas/Unid)", "Fecha Vencimiento", "Estado de Alerta", "Días Restantes"]
+    for col_idx, h_name in enumerate(headers, start=1):
+        c = ws.cell(row=4, column=col_idx, value=h_name)
+        c.fill = header_fill
+        c.font = header_font
+        c.border = thin_border
+        c.alignment = Alignment(horizontal="center", vertical="center")
+
+    datos_procesados = []
+    for item in vencimientos_list:
+        estado, prioridad, dias = calcular_estado_vencimiento(item["Fecha Vencimiento"])
+        tamano_orden = obtener_orden_tamano(item["Descripción del Producto"])
+        datos_procesados.append({
+            "SKU": item["SKU"],
+            "Descripción del Producto": item["Descripción del Producto"],
+            "Cantidad": item.get("Cantidad", 1),
+            "Fecha Vencimiento": item["Fecha Vencimiento"],
+            "Estado": estado,
+            "Dias": dias,
+            "TamanoOrden": tamano_orden
+        })
+
+    # Orden principal: Días restantes (lo más viejo/urgente arriba), secundario: Tamaño de producto
+    datos_ordenados = sorted(datos_procesados, key=lambda x: (x["Dias"], x["TamanoOrden"]))
+
+    for row_idx, r_data in enumerate(datos_ordenados, start=5):
+        ws.row_dimensions[row_idx].height = 20
+        
+        if r_data["Dias"] < 0 or r_data["Dias"] <= 30:
+            row_fill = fill_rojo
+        elif r_data["Dias"] <= 60:
+            row_fill = fill_amarillo
+        else:
+            row_fill = fill_verde
+
+        vals = [
+            r_data["SKU"],
+            r_data["Descripción del Producto"],
+            r_data["Cantidad"],
+            r_data["Fecha Vencimiento"],
+            r_data["Estado"],
+            r_data["Dias"] if r_data["Dias"] != 9999 else "N/A"
+        ]
+
+        for col_idx, val in enumerate(vals, start=1):
+            c = ws.cell(row=row_idx, column=col_idx, value=val)
+            c.border = thin_border
+            c.fill = row_fill
+            c.font = Font(name="Calibri", size=11)
+            
+            if col_idx in [1, 3, 4, 5, 6]:
+                c.alignment = Alignment(horizontal="center", vertical="center")
+                if col_idx == 3:
+                    c.number_format = '#,##0'
+            else:
+                c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+
+    for col_idx in range(1, 7):
+        col_letter = get_column_letter(col_idx)
+        max_len = max(len(str(ws.cell(row=r, column=col_idx).value or '')) for r in range(4, ws.max_row + 1))
+        ws.column_dimensions[col_letter].width = max(max_len + 6, 20)
+
+    output = io.BytesIO()
+    wb.save(output)
+    return output.getvalue()
+
+# ---------------------------------------------------------
+# 5. PROCESAMIENTO DE PDF DE RUTAS (EXTRACCIÓN - INTACTO)
 # ---------------------------------------------------------
 def procesar_pdf_rutas(pdf_file):
     routes_data = {}
@@ -402,7 +555,6 @@ def procesar_pdf_rutas(pdf_file):
                     cajas = 0
                     unidades = 0
                     
-                    # Detección precisa de cantidades con barra (e.g. "6 / 8", " / 15", "0 / 15")
                     m_slash = re.search(r'(?:^|\s)(\d+)?\s*/\s*(\d+)', l_str)
                     if m_slash:
                         c_str = m_slash.group(1)
@@ -410,26 +562,20 @@ def procesar_pdf_rutas(pdf_file):
                         cajas = int(c_str) if c_str else 0
                         unidades = int(u_str) if u_str else 0
                     else:
-                        # Búsqueda general si viene en formato independiente sin barra
                         m_qty = re.search(r'[\$\s]*(\d+)\s*[/\\-]\s*(\d+)', l_str)
                         if m_qty:
                             cajas = int(m_qty.group(1))
                             unidades = int(m_qty.group(2))
                     
-                    # Limpieza profunda de la descripción del producto
                     desc_limpia = l_str.replace(sku, "")
                     if m_slash:
                         desc_limpia = desc_limpia.replace(m_slash.group(0), "")
                     
                     desc_limpia = re.sub(r'\s+\d+\s*[/\\-]\s*\d+\s*$', '', desc_limpia)
                     desc_limpia = re.sub(r'\s+[/\\-]\s*\d+\s*$', '', desc_limpia)
-                    
-                    # Eliminar códigos largos de control internos y líneas (ej: "184017 _____" o similares)
                     desc_limpia = re.sub(r'\b\d{5,7}\b\s*_+', '', desc_limpia)
                     desc_limpia = re.sub(r'\b\d{5,7}\b', '', desc_limpia)
                     desc_limpia = re.sub(r'_+', '', desc_limpia)
-                    
-                    # Limpiar caracteres especiales sueltos
                     desc_limpia = re.sub(r'[\$\|\(\)]', '', desc_limpia).strip()
                     
                     descripcion_final = desc_limpia if len(desc_limpia) > 3 else mapa_catalogo.get(sku, "PRODUCTO FEMSA")
@@ -450,13 +596,13 @@ def procesar_pdf_rutas(pdf_file):
     return routes_data
 
 # ---------------------------------------------------------
-# 5. PESTAÑAS Y NAVEGACIÓN
+# 6. PESTAÑAS Y NAVEGACIÓN
 # ---------------------------------------------------------
 tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF (Rutas)"])
 
-# --- TAB 1: FECHAS DE VENCIMIENTO ---
+# --- TAB 1: FECHAS DE VENCIMIENTO (ACTUALIZADA CON MULTILOTE Y TAMAÑOS) ---
 with tab1:
-    st.markdown('<p class="sub-title">➕ Agregar Registro de Vencimiento</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">➕ Agregar Lote y Fecha de Vencimiento</p>', unsafe_allow_html=True)
     
     with st.expander("📂 Opciones de Respaldo y Sincronización (JSON)"):
         datos_respaldo = {
@@ -494,85 +640,116 @@ with tab1:
 
     st.session_state.modo_captura = st.selectbox(
         "🎛️ Selecciona el método de entrada de datos:",
-        ["Tomar datos manual", "Tomar datos con voz"],
+        ["Tomar datos manual", "Búsqueda rápida de SKU"],
         index=0,
         key="select_modo_captura"
     )
 
     skus_opt = [f"{item['sku']} - {item['descripcion']}" for item in st.session_state.catalogo]
 
-    if st.session_state.modo_captura == "Tomar datos con voz":
-        filtro_voz = st.text_input("🎤 Dicta o escribe el producto:", value=st.session_state.voz_temp_input, placeholder="Ej: Coca-Cola 350, Brisa, Quatro...", key="input_voz_busqueda")
+    if st.session_state.modo_captura == "Búsqueda rápida de SKU":
+        filtro_voz = st.text_input("🎤 Escribe o busca el producto:", value=st.session_state.voz_temp_input, placeholder="Ej: Coca-Cola 350, Brisa, Quatro...", key="input_voz_busqueda")
         st.session_state.voz_temp_input = filtro_voz
         skus_filtrados = [s for s in skus_opt if filtro_voz.lower() in s.lower()] if filtro_voz else skus_opt
     else:
         skus_filtrados = skus_opt
 
-    c1, c2 = st.columns([2, 1])
+    c1, c2, c3 = st.columns([2, 1, 1])
     with c1:
         sel_sku = st.selectbox("Seleccionar Producto:", options=skus_filtrados, index=0 if len(skus_filtrados) == 1 else None, placeholder="🔎 Buscar SKU o Nombre...", key="select_sku_venc")
     with c2:
+        cantidad_lote = st.number_input("Cantidad (Cajas):", min_value=1, value=1, step=1, key="input_cantidad_lote")
+    with c3:
         fecha_seleccionada = st.date_input("Fecha Vencimiento:", value=date.today(), key="input_calendar_venc")
         
-    if st.button("💾 Guardar Fecha de Vencimiento", key="btn_save_venc"):
+    if st.button("💾 Guardar Lote de Vencimiento", key="btn_save_venc"):
         if sel_sku:
             s_code, s_desc = sel_sku.split(" - ", 1)
             fecha_formateada = fecha_seleccionada.strftime("%d/%m/%Y")
-            existe_idx = next((i for i, r in enumerate(st.session_state.vencimientos) if r["SKU"] == s_code), None)
             
-            if existe_idx is not None:
-                st.session_state.vencimientos[existe_idx]["Fecha Vencimiento"] = fecha_formateada
-                st.warning(f"⚠️ El SKU {s_code} ya estaba registrado. Se actualizó su fecha.")
-            else:
-                st.session_state.vencimientos.insert(0, {
-                    "id": len(st.session_state.vencimientos) + 1,
-                    "SKU": s_code,
-                    "Descripción del Producto": s_desc,
-                    "Fecha Vencimiento": fecha_formateada
-                })
+            # Se permite agregar múltiples lotes/fechas por producto
+            nuevo_lote = {
+                "id_lote": f"{s_code}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
+                "SKU": s_code,
+                "Descripción del Producto": s_desc,
+                "Cantidad": cantidad_lote,
+                "Fecha Vencimiento": fecha_formateada
+            }
             
-            st.toast("¡Guardado correctamente!", icon="✅")
+            st.session_state.vencimientos.append(nuevo_lote)
+            st.toast(f"¡Lote guardado correctamente ({s_code} - {fecha_formateada})!", icon="✅")
             st.rerun()
         else:
             st.warning("⚠️ Debes seleccionar un SKU primero.")
 
-    st.markdown('<p class="sub-title">📋 Registros Guardados</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">📋 Lotes Registrados en Bodega (Ordenados por Urgencia y Tamaños)</p>', unsafe_allow_html=True)
+    
     if st.session_state.vencimientos:
-        for idx, row in enumerate(st.session_state.vencimientos):
-            col_a, col_b, col_c, col_d = st.columns([2, 4, 3, 2])
+        lotes_con_orden = []
+        for idx, item in enumerate(st.session_state.vencimientos):
+            estado, prioridad, dias = calcular_estado_vencimiento(item["Fecha Vencimiento"])
+            tamano_orden = obtener_orden_tamano(item["Descripción del Producto"])
+            lote_data = item.copy()
+            lote_data["_idx_original"] = idx
+            lote_data["_dias"] = dias
+            lote_data["_estado"] = estado
+            lote_data["_tamano"] = tamano_orden
+            lotes_con_orden.append(lote_data)
+
+        # Ordenar por días restantes (lo más cercano a vencer arriba) y luego por tamaño
+        lotes_ordenados = sorted(lotes_con_orden, key=lambda x: (x["_dias"], x["_tamano"]))
+
+        to_delete = None
+        for row in lotes_ordenados:
+            orig_idx = row["_idx_original"]
+            dias_rest = row["_dias"]
+            estado_txt = row["_estado"]
+            
+            col_a, col_b, col_c, col_d, col_e, col_f = st.columns([1.5, 3.0, 1.2, 2.2, 2.2, 1.2])
             col_a.write(f"**{row['SKU']}**")
             col_b.write(row['Descripción del Producto'])
+            col_c.write(f"📦 {row.get('Cantidad', 1)}")
             
+            if dias_rest <= 30:
+                col_d.error(f"{estado_txt} ({dias_rest}d)")
+            elif dias_rest <= 60:
+                col_d.warning(f"{estado_txt} ({dias_rest}d)")
+            else:
+                col_d.success(f"{estado_txt} ({dias_rest}d)")
+
             try:
                 fecha_default_row = datetime.strptime(row['Fecha Vencimiento'], "%d/%m/%Y").date()
             except ValueError:
                 fecha_default_row = date.today()
 
-            nueva_f_date = col_c.date_input("Fecha", value=fecha_default_row, key=f"date_row_{row['SKU']}_{idx}")
+            nueva_f_date = col_e.date_input("Fecha", value=fecha_default_row, key=f"date_lote_{orig_idx}")
             nueva_f_texto = nueva_f_date.strftime("%d/%m/%Y")
             
-            if nueva_f_texto != row['Fecha Vencimiento']:
-                st.session_state.vencimientos[idx]['Fecha Vencimiento'] = nueva_f_texto
-            
-            if col_d.button("❌ Borrar", key=f"del_row_{row['SKU']}_{idx}"):
-                st.session_state.vencimientos.pop(idx)
+            if nueva_f_texto != st.session_state.vencimientos[orig_idx]['Fecha Vencimiento']:
+                st.session_state.vencimientos[orig_idx]['Fecha Vencimiento'] = nueva_f_texto
                 st.rerun()
+            
+            if col_f.button("❌ Borrar", key=f"del_lote_{orig_idx}"):
+                to_delete = orig_idx
+
+        if to_delete is not None:
+            st.session_state.vencimientos.pop(to_delete)
+            st.rerun()
 
         st.divider()
-        df_venc_out = pd.DataFrame(st.session_state.vencimientos)[["SKU", "Descripción del Producto", "Fecha Vencimiento"]]
-        excel_bytes = exportar_excel_multiruta({"Vencimientos": {"df": df_venc_out, "header": "Reporte de Vencimientos"}}, fecha_str=date.today().strftime('%d/%m/%Y'), es_reporte_rutas=False)
+        excel_bytes = exportar_excel_vencimientos_organizado(st.session_state.vencimientos, fecha_str=date.today().strftime('%d/%m/%Y'))
         
         col_dl1, col_dl2 = st.columns([1, 1])
         with col_dl1:
             st.download_button(
-                label="📥 Descargar Reporte en Excel",
+                label="📥 Descargar Reporte Organizado de Lotes (.xlsx)",
                 data=excel_bytes,
-                file_name=f"Vencimientos_Inesco_{date.today()}.xlsx",
+                file_name=f"Vencimientos_Inesco_Lotes_{date.today()}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="dl_venc_excel"
+                key="dl_venc_excel_org"
             )
         with col_dl2:
-            texto_wa = urllib.parse.quote(f"Hola, comparto el reporte de vencimientos de Distribuciones Inesco del {date.today().strftime('%d/%m/%Y')}.")
+            texto_wa = urllib.parse.quote(f"Hola, comparto el reporte de control de lotes y vencimientos de Distribuciones Inesco del {date.today().strftime('%d/%m/%Y')}.")
             st.markdown(f"""
                 <a href="https://api.whatsapp.com/send?text={texto_wa}" target="_blank" style="text-decoration: none;">
                     <div style="background-color: #25D366; color: white; padding: 10px 15px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 0.95rem;">
@@ -581,7 +758,7 @@ with tab1:
                 </a>
             """, unsafe_allow_html=True)
 
-# --- TAB 2: ADMINISTRAR SKUS ---
+# --- TAB 2: ADMINISTRAR SKUS (INTACTO) ---
 with tab2:
     st.markdown('<p class="sub-title">⚙️ Administrar Catálogo de SKUs</p>', unsafe_allow_html=True)
     col_add1, col_add2 = st.columns([1, 2])
@@ -610,7 +787,7 @@ with tab2:
             st.session_state.catalogo.pop(idx)
             st.rerun()
 
-# --- TAB 3: EXTRACCIÓN PDF (RUTAS) ---
+# --- TAB 3: EXTRACCIÓN PDF (RUTAS) (INTACTO) ---
 with tab3:
     st.markdown('<p class="sub-title">📄 Extracción Total de Rutas y Cargues de FEMSA</p>', unsafe_allow_html=True)
     st.info("ℹ️ Sube tu PDF de cargue")
@@ -633,21 +810,21 @@ with tab3:
                             
                         excel_rutas_bytes = exportar_excel_multiruta(dfs_para_excel, fecha_str=date.today().strftime('%d/%m/%Y'), es_reporte_rutas=True)
                         
-                        st.success(f"✅ ¡Proceso exitoso! Se detectaron {len(datos_rutas)} rutas.")
+                        st.success(f"✅ Se procesaron exitosamente {len(datos_rutas)} ruta(s).")
+                        
+                        for r_name, r_info in datos_rutas.items():
+                            with st.expander(f"🚚 Ruta: {r_name} ({len(r_info['items'])} registros)"):
+                                st.write(f"**Encabezado detectado:** {r_info['header']}")
+                                st.dataframe(pd.DataFrame(r_info["items"]), use_container_width=True)
                         
                         st.download_button(
-                            label="📥 Descargar Reporte Consolidado de Rutas (Excel)",
+                            label="📥 Descargar Reporte Completo de Rutas (.xlsx)",
                             data=excel_rutas_bytes,
                             file_name=f"Reporte_Rutas_Inesco_{date.today()}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            key="dl_excel_rutas"
+                            key="dl_rutas_excel"
                         )
-                        
-                        for r_name, r_info in datos_rutas.items():
-                            with st.expander(f"🚛 Ruta / Carga: {r_name} ({len(r_info['items'])} productos)"):
-                                st.write(f"**Encabezado:** {r_info['header']}")
-                                st.dataframe(pd.DataFrame(r_info["items"]), use_container_width=True)
                     else:
-                        st.warning("⚠️ No se extrajeron datos válidos del PDF.")
+                        st.warning("⚠️ No se detectaron productos estructurados en el PDF.")
                 except Exception as e:
-                    st.error(f"⚠️ Error al procesar el archivo: {e}")
+                    st.error(f"⚠️ Ocurrió un error al procesar el PDF: {e}")
