@@ -675,18 +675,39 @@ with tab1:
         if sel_sku:
             s_code, s_desc = sel_sku.split(" - ", 1)
             fecha_formateada = fecha_seleccionada.strftime("%d/%m/%Y")
-            cant_final = cantidad_input.strip() if cantidad_input.strip().isdigit() else "-"
             
-            nuevo_lote = {
-                "id_lote": f"{s_code}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
-                "SKU": s_code,
-                "Descripción del Producto": s_desc,
-                "Cantidad": cant_final,
-                "Fecha Vencimiento": fecha_formateada
-            }
+            # Obtener el valor numérico de la cantidad ingresada (si hay, sino 1 o N/A)
+            cant_actual = int(cantidad_input.strip()) if cantidad_input.strip().isdigit() else 1
             
-            st.session_state.vencimientos.append(nuevo_lote)
-            st.toast(f"¡Lote guardado ({s_code} - {fecha_formateada})!", icon="✅")
+            # Verificar si ya existe un registro con el MISMO SKU y la MISMA Fecha de Vencimiento
+            lote_existente_idx = next(
+                (i for i, r in enumerate(st.session_state.vencimientos) 
+                 if r["SKU"] == s_code and r["Fecha Vencimiento"] == fecha_formateada), 
+                None
+            )
+            
+            if lote_existente_idx is not None:
+                # Si ya existe exactamente el mismo producto y fecha, sumamos las cantidades
+                cant_anterior = st.session_state.vencimientos[lote_existente_idx].get("Cantidad", 1)
+                if isinstance(cant_anterior, int) and isinstance(cant_actual, int):
+                    st.session_state.vencimientos[lote_existente_idx]["Cantidad"] = cant_anterior + cant_actual
+                else:
+                    st.session_state.vencimientos[lote_existente_idx]["Cantidad"] = cant_actual
+                
+                st.toast(f"⚠️ El lote para {s_code} con fecha {fecha_formateada} ya existía. Se actualizó la cantidad.", icon="🔄")
+            else:
+                # Si es una fecha nueva para ese SKU, se crea el nuevo lote independiente
+                cant_final = cantidad_input.strip() if cantidad_input.strip().isdigit() else "-"
+                nuevo_lote = {
+                    "id_lote": f"{s_code}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
+                    "SKU": s_code,
+                    "Descripción del Producto": s_desc,
+                    "Cantidad": cant_final,
+                    "Fecha Vencimiento": fecha_formateada
+                }
+                st.session_state.vencimientos.append(nuevo_lote)
+                st.toast(f"¡Lote guardado ({s_code} - {fecha_formateada})!", icon="✅")
+            
             st.rerun()
         else:
             st.warning("⚠️ Debes seleccionar un SKU primero.")
