@@ -395,25 +395,28 @@ def obtener_orden_tamano(descripcion):
 # ---------------------------------------------------------
 # FUNCIONES ACTUALIZADAS: ALERTAS VISUALES MÁS FUERTES Y CANTIDAD OPCIONAL
 # ---------------------------------------------------------
+# ---------------------------------------------------------
+# FUNCIONES REESTRUCTURADAS: DISEÑO PROFESIONAL Y ORDEN DE COLUMNAS
+# ---------------------------------------------------------
 def calcular_estado_vencimiento(fecha_venc_str):
-    """Calcula días restantes y define niveles de alerta con colores de alto contraste."""
+    """Calcula días restantes y define el estado de alerta."""
     try:
         f_venc = datetime.strptime(fecha_venc_str, "%d/%m/%Y").date()
         dias_restantes = (f_venc - date.today()).days
         
         if dias_restantes < 0:
-            return "🔴 VENCIDO", 0, dias_restantes
+            return "🔴 VENCIDO", dias_restantes
         elif dias_restantes <= 30:
-            return "🚨 URGENTE (< 30 días)", 1, dias_restantes
+            return "🚨 URGENTE (< 30 días)", dias_restantes
         elif dias_restantes <= 60:
-            return "⚠️ PRÓXIMO (< 60 días)", 2, dias_restantes
+            return "⚠️ PRÓXIMO (< 60 días)", dias_restantes
         else:
-            return "✅ SEGURO", 3, dias_restantes
+            return "✅ SEGURO", dias_restantes
     except:
-        return "⚪ DESCONOCIDO", 4, 9999
+        return "⚪ DESCONOCIDO", 9999
 
 def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
-    """Exporta el reporte con colores de alerta fuertes y soporte para cantidad opcional."""
+    """Exporta un reporte profesional donde solo la celda de alerta lleva color y el resto se mantiene limpio."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Vencimientos"
@@ -424,22 +427,24 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
     header_font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
     
     thin_border = Border(
-        left=Side(style='thin', color='BFBFBF'), right=Side(style='thin', color='BFBFBF'),
-        top=Side(style='thin', color='BFBFBF'), bottom=Side(style='thin', color='BFBFBF')
+        left=Side(style='thin', color='D9D9D9'), right=Side(style='thin', color='D9D9D9'),
+        top=Side(style='thin', color='D9D9D9'), bottom=Side(style='thin', color='D9D9D9')
     )
     
-    # Colores de Excel de alto contraste para distinguir fácilmente
-    fill_rojo_fuerte = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")     # Rojo claro alerta
-    font_rojo_fuerte = Font(name="Calibri", size=11, color="9C0006", bold=True)
+    white_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
     
-    fill_amarillo = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")         # Amarillo precaución
-    font_amarillo = Font(name="Calibri", size=11, color="9C6500", bold=True)
+    # Colores sutiles y profesionales exclusivos para la celda de alerta
+    fill_rojo_celda = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+    font_rojo_celda = Font(name="Calibri", size=11, color="9C0006", bold=True)
     
-    fill_verde = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")           # Verde seguro
-    font_verde = Font(name="Calibri", size=11, color="006100")
+    fill_amarillo_celda = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
+    font_amarillo_celda = Font(name="Calibri", size=11, color="9C6500", bold=True)
+    
+    fill_verde_celda = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+    font_verde_celda = Font(name="Calibri", size=11, color="006100")
 
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=6)
-    cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO - CONTROL MULTILOTE DE VENCIMIENTOS")
+    cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO - CONTROL DE VENCIMIENTOS Y LOTES")
     cell_t.font = red_title_font
     cell_t.fill = title_fill
     cell_t.alignment = Alignment(horizontal="center", vertical="center")
@@ -449,7 +454,7 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
 
     sub_fill = PatternFill(start_color="ED7D31", end_color="ED7D31", fill_type="solid")
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=6)
-    cell_s = ws.cell(row=2, column=1, value=f"📌 Reporte Ordenado por Urgencia (FIFO) y Tamaños (Fecha: {fecha_str})")
+    cell_s = ws.cell(row=2, column=1, value=f"📌 Reporte Profesional Ordenado por FIFO y Tamaños (Fecha: {fecha_str})")
     cell_s.font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
     cell_s.fill = sub_fill
     cell_s.alignment = Alignment(horizontal="center", vertical="center")
@@ -462,7 +467,8 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
     ws.row_dimensions[3].height = 10
     ws.row_dimensions[4].height = 24
 
-    headers = ["SKU", "Descripción del Producto", "Cantidad (Cajas/Unid)", "Fecha Vencimiento", "Estado de Alerta", "Días Restantes"]
+    # Nuevo orden de columnas solicitado
+    headers = ["SKU", "Descripción del Producto", "Fecha Vencimiento", "Cantidad", "Estado de Alerta", "Días Restantes"]
     for col_idx, h_name in enumerate(headers, start=1):
         c = ws.cell(row=4, column=col_idx, value=h_name)
         c.fill = header_fill
@@ -472,13 +478,13 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
 
     datos_procesados = []
     for item in vencimientos_list:
-        estado, prioridad, dias = calcular_estado_vencimiento(item["Fecha Vencimiento"])
+        estado, dias = calcular_estado_vencimiento(item["Fecha Vencimiento"])
         tamano_orden = obtener_orden_tamano(item["Descripción del Producto"])
         datos_procesados.append({
             "SKU": item["SKU"],
             "Descripción del Producto": item["Descripción del Producto"],
-            "Cantidad": item.get("Cantidad", "N/A"),
             "Fecha Vencimiento": item["Fecha Vencimiento"],
+            "Cantidad": item.get("Cantidad", "-"),
             "Estado": estado,
             "Dias": dias,
             "TamanoOrden": tamano_orden
@@ -489,21 +495,19 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
     for row_idx, r_data in enumerate(datos_ordenados, start=5):
         ws.row_dimensions[row_idx].height = 20
         
+        # Definir color de celda de alerta
         if r_data["Dias"] < 0 or r_data["Dias"] <= 30:
-            row_fill = fill_rojo_fuerte
-            row_font = font_rojo_fuerte
+            f_fill, f_font = fill_rojo_celda, font_rojo_celda
         elif r_data["Dias"] <= 60:
-            row_fill = fill_amarillo
-            row_font = font_amarillo
+            f_fill, f_font = fill_amarillo_celda, font_amarillo_celda
         else:
-            row_fill = fill_verde
-            row_font = font_verde
+            f_fill, f_font = fill_verde_celda, font_verde_celda
 
         vals = [
             r_data["SKU"],
             r_data["Descripción del Producto"],
-            r_data["Cantidad"],
             r_data["Fecha Vencimiento"],
+            r_data["Cantidad"],
             r_data["Estado"],
             r_data["Dias"] if r_data["Dias"] != 9999 else "N/A"
         ]
@@ -511,15 +515,27 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
         for col_idx, val in enumerate(vals, start=1):
             c = ws.cell(row=row_idx, column=col_idx, value=val)
             c.border = thin_border
-            c.fill = row_fill
-            c.font = row_font
             
-            if col_idx in [1, 3, 4, 5, 6]:
+            # El producto, fecha y cantidad van con fondo blanco limpio y profesional
+            if col_idx in [1, 2, 3, 4]:
+                c.fill = white_fill
+                c.font = Font(name="Calibri", size=11, color="000000")
+                if col_idx in [1, 3, 4]:
+                    c.alignment = Alignment(horizontal="center", vertical="center")
+                else:
+                    c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+            
+            # Únicamente la columna de "Estado de Alerta" (columna 5) lleva el color de advertencia
+            elif col_idx == 5:
+                c.fill = f_fill
+                c.font = f_font
                 c.alignment = Alignment(horizontal="center", vertical="center")
-                if col_idx == 3 and isinstance(val, (int, float)):
-                    c.number_format = '#,##0'
+            
+            # Días restantes con fondo blanco y centrado
             else:
-                c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+                c.fill = white_fill
+                c.font = Font(name="Calibri", size=11, color="000000")
+                c.alignment = Alignment(horizontal="center", vertical="center")
 
     for col_idx in range(1, 7):
         col_letter = get_column_letter(col_idx)
@@ -529,90 +545,13 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
     output = io.BytesIO()
     wb.save(output)
     return output.getvalue()
-
-# ---------------------------------------------------------
-# 5. PROCESAMIENTO DE PDF DE RUTAS (EXTRACCIÓN - INTACTO)
-# ---------------------------------------------------------
-def procesar_pdf_rutas(pdf_file):
-    routes_data = {}
-    mapa_catalogo = {item["sku"]: item["descripcion"] for item in st.session_state.catalogo}
-    
-    with pdfplumber.open(pdf_file) as pdf:
-        current_route = "ML3E51"
-        current_header_info = "Ruta / No.de Carga: ML3E51"
-        
-        for page_idx, page in enumerate(pdf.pages, start=1):
-            texto_pagina = page.extract_text()
-            if not texto_pagina:
-                continue
-                
-            lineas = texto_pagina.split('\n')
-            
-            for linea in lineas:
-                l_str = linea.strip()
-                if not l_str:
-                    continue
-                
-                m_ruta = re.search(r'ML3E5[1-3]', l_str)
-                if m_ruta:
-                    current_route = m_ruta.group(0)
-                
-                if "Ruta" in l_str or "No.de Carga" in l_str or "Fecha de Entrega" in l_str:
-                    current_header_info = l_str
-                    continue 
-                
-                m_sku = re.search(r'\b(\d{5,6})\b', l_str)
-                if m_sku:
-                    sku = m_sku.group(1)
-                    cajas = 0
-                    unidades = 0
-                    
-                    m_slash = re.search(r'(?:^|\s)(\d+)?\s*/\s*(\d+)', l_str)
-                    if m_slash:
-                        c_str = m_slash.group(1)
-                        u_str = m_slash.group(2)
-                        cajas = int(c_str) if c_str else 0
-                        unidades = int(u_str) if u_str else 0
-                    else:
-                        m_qty = re.search(r'[\$\s]*(\d+)\s*[/\\-]\s*(\d+)', l_str)
-                        if m_qty:
-                            cajas = int(m_qty.group(1))
-                            unidades = int(m_qty.group(2))
-                    
-                    desc_limpia = l_str.replace(sku, "")
-                    if m_slash:
-                        desc_limpia = desc_limpia.replace(m_slash.group(0), "")
-                    
-                    desc_limpia = re.sub(r'\s+\d+\s*[/\\-]\s*\d+\s*$', '', desc_limpia)
-                    desc_limpia = re.sub(r'\s+[/\\-]\s*\d+\s*$', '', desc_limpia)
-                    desc_limpia = re.sub(r'\b\d{5,7}\b\s*_+', '', desc_limpia)
-                    desc_limpia = re.sub(r'\b\d{5,7}\b', '', desc_limpia)
-                    desc_limpia = re.sub(r'_+', '', desc_limpia)
-                    desc_limpia = re.sub(r'[\$\|\(\)]', '', desc_limpia).strip()
-                    
-                    descripcion_final = desc_limpia if len(desc_limpia) > 3 else mapa_catalogo.get(sku, "PRODUCTO FEMSA")
-                    
-                    if current_route not in routes_data:
-                        routes_data[current_route] = {
-                            "header": current_header_info,
-                            "items": []
-                        }
-                    
-                    routes_data[current_route]["items"].append({
-                        "SKU": sku,
-                        "Descripción del Producto": descripcion_final,
-                        "Cajas": cajas,
-                        "Unidades": unidades
-                    })
-                    
-    return routes_data
-
 # ---------------------------------------------------------
 # 6. PESTAÑAS Y NAVEGACIÓN
 # ---------------------------------------------------------
 tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF (Rutas)"])
 
 # --- TAB 1: FECHAS DE VENCIMIENTO (ACTUALIZADA CON MULTILOTE Y TAMAÑOS) ---
+# --- TAB 1: FECHAS DE VENCIMIENTO ---
 with tab1:
     st.markdown('<p class="sub-title">➕ Agregar Lote y Fecha de Vencimiento</p>', unsafe_allow_html=True)
     
@@ -642,16 +581,11 @@ with tab1:
                         st.session_state.last_uploaded_file = uploaded_backup.name
                         st.success("✅ ¡Datos y catálogo restaurados exitosamente!")
                         st.rerun()
-                    elif isinstance(data_recuperada, list):
-                        st.session_state.vencimientos = data_recuperada
-                        st.session_state.last_uploaded_file = uploaded_backup.name
-                        st.success("✅ ¡Vencimientos restaurados con éxito!")
-                        st.rerun()
                 except Exception as e:
                     st.error(f"⚠️ Error al leer el respaldo: {e}")
 
     st.session_state.modo_captura = st.selectbox(
-        "🎛️ Selecciona el método de entrada de datos:",
+        "🎛️ Método de entrada de datos:",
         ["Tomar datos manual", "Búsqueda rápida de SKU"],
         index=0,
         key="select_modo_captura"
@@ -660,7 +594,7 @@ with tab1:
     skus_opt = [f"{item['sku']} - {item['descripcion']}" for item in st.session_state.catalogo]
 
     if st.session_state.modo_captura == "Búsqueda rápida de SKU":
-        filtro_voz = st.text_input("🎤 Escribe o busca el producto:", value=st.session_state.voz_temp_input, placeholder="Ej: Coca-Cola 350, Brisa, Quatro...", key="input_voz_busqueda")
+        filtro_voz = st.text_input("🔎 Escribe o busca el producto:", value=st.session_state.voz_temp_input, placeholder="Ej: Coca-Cola 350, Brisa, Quatro...", key="input_voz_busqueda")
         st.session_state.voz_temp_input = filtro_voz
         skus_filtrados = [s for s in skus_opt if filtro_voz.lower() in s.lower()] if filtro_voz else skus_opt
     else:
@@ -668,9 +602,10 @@ with tab1:
 
     c1, c2, c3 = st.columns([2, 1, 1])
     with c1:
-        sel_sku = st.selectbox("Seleccionar Producto:", options=skus_filtrados, index=0 if len(skus_filtrados) == 1 else None, placeholder="🔎 Buscar SKU o Nombre...", key="select_sku_venc")
+        sel_sku = st.selectbox("Seleccionar Producto:", options=skus_filtrados, index=0 if len(skus_filtrados) == 1 else None, placeholder="🔎 Buscar SKU...", key="select_sku_venc")
     with c2:
-        cantidad_lote = st.number_input("Cantidad (Cajas):", min_value=1, value=1, step=1, key="input_cantidad_lote")
+        # Cantidad opcional: si se deja en blanco, asigna un guion "-"
+        cantidad_input = st.text_input("Cant. (Opcional):", value="", placeholder="Ej: 50 o vacío", key="input_cantidad_lote")
     with c3:
         fecha_seleccionada = st.date_input("Fecha Vencimiento:", value=date.today(), key="input_calendar_venc")
         
@@ -679,27 +614,28 @@ with tab1:
             s_code, s_desc = sel_sku.split(" - ", 1)
             fecha_formateada = fecha_seleccionada.strftime("%d/%m/%Y")
             
-            # Se permite agregar múltiples lotes/fechas por producto
+            cant_final = cantidad_input.strip() if cantidad_input.strip().isdigit() else "-"
+            
             nuevo_lote = {
                 "id_lote": f"{s_code}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
                 "SKU": s_code,
                 "Descripción del Producto": s_desc,
-                "Cantidad": cantidad_lote,
+                "Cantidad": cant_final,
                 "Fecha Vencimiento": fecha_formateada
             }
             
             st.session_state.vencimientos.append(nuevo_lote)
-            st.toast(f"¡Lote guardado correctamente ({s_code} - {fecha_formateada})!", icon="✅")
+            st.toast(f"¡Lote guardado ({s_code} - {fecha_formateada})!", icon="✅")
             st.rerun()
         else:
             st.warning("⚠️ Debes seleccionar un SKU primero.")
 
-    st.markdown('<p class="sub-title">📋 Lotes Registrados en Bodega (Ordenados por Urgencia y Tamaños)</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">📋 Lotes Registrados en Bodega</p>', unsafe_allow_html=True)
     
     if st.session_state.vencimientos:
         lotes_con_orden = []
         for idx, item in enumerate(st.session_state.vencimientos):
-            estado, prioridad, dias = calcular_estado_vencimiento(item["Fecha Vencimiento"])
+            estado, dias = calcular_estado_vencimiento(item["Fecha Vencimiento"])
             tamano_orden = obtener_orden_tamano(item["Descripción del Producto"])
             lote_data = item.copy()
             lote_data["_idx_original"] = idx
@@ -708,7 +644,6 @@ with tab1:
             lote_data["_tamano"] = tamano_orden
             lotes_con_orden.append(lote_data)
 
-        # Ordenar por días restantes (lo más cercano a vencer arriba) y luego por tamaño
         lotes_ordenados = sorted(lotes_con_orden, key=lambda x: (x["_dias"], x["_tamano"]))
 
         to_delete = None
@@ -717,29 +652,33 @@ with tab1:
             dias_rest = row["_dias"]
             estado_txt = row["_estado"]
             
-            col_a, col_b, col_c, col_d, col_e, col_f = st.columns([1.5, 3.0, 1.2, 2.2, 2.2, 1.2])
+            # Columnas organizadas visualmente en pantalla: SKU | Producto | Fecha | Cantidad | Estado | Borrar
+            col_a, col_b, col_c, col_d, col_e, col_f = st.columns([1.5, 3.0, 2.2, 1.2, 2.2, 1.2])
             col_a.write(f"**{row['SKU']}**")
             col_b.write(row['Descripción del Producto'])
-            col_c.write(f"📦 {row.get('Cantidad', 1)}")
-            
-            if dias_rest <= 30:
-                col_d.error(f"{estado_txt} ({dias_rest}d)")
-            elif dias_rest <= 60:
-                col_d.warning(f"{estado_txt} ({dias_rest}d)")
-            else:
-                col_d.success(f"{estado_txt} ({dias_rest}d)")
 
             try:
                 fecha_default_row = datetime.strptime(row['Fecha Vencimiento'], "%d/%m/%Y").date()
             except ValueError:
                 fecha_default_row = date.today()
 
-            nueva_f_date = col_e.date_input("Fecha", value=fecha_default_row, key=f"date_lote_{orig_idx}")
+            nueva_f_date = col_c.date_input("Fecha", value=fecha_default_row, key=f"date_lote_{orig_idx}")
             nueva_f_texto = nueva_f_date.strftime("%d/%m/%Y")
             
             if nueva_f_texto != st.session_state.vencimientos[orig_idx]['Fecha Vencimiento']:
                 st.session_state.vencimientos[orig_idx]['Fecha Vencimiento'] = nueva_f_texto
                 st.rerun()
+            
+            cant_mostrada = row.get('Cantidad', '-')
+            col_d.write(f"📦 {cant_mostrada}")
+            
+            # Solo la columna de alerta muestra el color y estado
+            if dias_rest <= 30:
+                col_e.error(f"{estado_txt} ({dias_rest}d)")
+            elif dias_rest <= 60:
+                col_e.warning(f"{estado_txt} ({dias_rest}d)")
+            else:
+                col_e.success(f"{estado_txt} ({dias_rest}d)")
             
             if col_f.button("❌ Borrar", key=f"del_lote_{orig_idx}"):
                 to_delete = orig_idx
@@ -754,7 +693,7 @@ with tab1:
         col_dl1, col_dl2 = st.columns([1, 1])
         with col_dl1:
             st.download_button(
-                label="📥 Descargar Reporte Organizado de Lotes (.xlsx)",
+                label="📥 Descargar Reporte Organizado (.xlsx)",
                 data=excel_bytes,
                 file_name=f"Vencimientos_Inesco_Lotes_{date.today()}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
