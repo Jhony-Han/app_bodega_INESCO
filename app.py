@@ -417,6 +417,10 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
     
     red_title_font = Font(color="FFFFFF", bold=True, size=13, name="Calibri")
     title_fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
+    
+    sub_font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
+    sub_fill = PatternFill(start_color="ED7D31", end_color="ED7D31", fill_type="solid") # Relleno naranja independiente
+    
     header_fill = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid")
     header_font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
     
@@ -429,6 +433,7 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
     fill_amarillo = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
     fill_verde = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
 
+    # Título principal
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=6)
     cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO - CONTROL MULTILOTE DE VENCIMIENTOS")
     cell_t.font = red_title_font
@@ -438,14 +443,15 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
         ws.cell(row=1, column=col).border = thin_border
         ws.cell(row=1, column=col).fill = title_fill
 
+    # Subtítulo (Fila 2) con relleno independiente para evitar conflictos
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=6)
     cell_s = ws.cell(row=2, column=1, value=f"📌 Ordenado por Urgencia (FIFO) y Tamaños de Bebidas (Fecha: {fecha_str})")
-    cell_s.font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
-    cell_s.fill = PatternFill(start_color="ED7D31", end_color="ED7D31", fill_type="solid")
+    cell_s.font = sub_font
+    cell_s.fill = sub_fill
     cell_s.alignment = Alignment(horizontal="center", vertical="center")
     for col in range(1, 7):
         ws.cell(row=2, column=col).border = thin_border
-        ws.cell(row=2, column=col).fill = cell_s.fill
+        ws.cell(row=2, column=col).fill = sub_fill
 
     ws.row_dimensions[1].height = 28
     ws.row_dimensions[2].height = 24
@@ -474,7 +480,7 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
             "TamanoOrden": tamano_orden
         })
 
-    # Orden principal: Días restantes (lo más viejo/urgente arriba), secundario: Tamaño de producto
+    # Orden principal: Días restantes (lo más cercano a vencer arriba), secundario: Tamaño de producto
     datos_ordenados = sorted(datos_procesados, key=lambda x: (x["Dias"], x["TamanoOrden"]))
 
     for row_idx, r_data in enumerate(datos_ordenados, start=5):
