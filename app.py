@@ -487,7 +487,7 @@ def calcular_estado_vencimiento(fecha_venc_str):
         return "⚪ DESCONOCIDO", 9999
 
 def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
-    """Exporta reporte profesional manteniendo el producto limpio y coloreando solo la alerta."""
+    """Exporta el reporte agrupado por secciones de productos (según el orden del catálogo/PDF) y ordenado por urgencia por lote."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Vencimientos"
@@ -514,7 +514,7 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
     font_verde_celda = Font(name="Calibri", size=11, color="006100")
 
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=6)
-    cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO - CONTROL DE VENCIMIENTOS Y LOTES")
+    cell_t = ws.cell(row=1, column=1, value="DISTRIBUCIONES INESCO - CONTROL DE VENCIMIENTOS POR SECCIÓN")
     cell_t.font = red_title_font
     cell_t.fill = title_fill
     cell_t.alignment = Alignment(horizontal="center", vertical="center")
@@ -524,7 +524,7 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
 
     sub_fill = PatternFill(start_color="ED7D31", end_color="ED7D31", fill_type="solid")
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=6)
-    cell_s = ws.cell(row=2, column=1, value=f"📌 Reporte Profesional Ordenado por FIFO y Tamaños (Fecha: {fecha_str})")
+    cell_s = ws.cell(row=2, column=1, value=f"📌 Reporte Agrupado por Secciones de Productos y FIFO por Lote (Fecha: {fecha_str})")
     cell_s.font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
     cell_s.fill = sub_fill
     cell_s.alignment = Alignment(horizontal="center", vertical="center")
@@ -545,10 +545,15 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
         c.border = thin_border
         c.alignment = Alignment(horizontal="center", vertical="center")
 
+    # Mapear el orden exacto de los productos según el catálogo de la app (que sigue el orden del PDF)
+    catalogo_actual = st.session_state.get("catalogo", CATALOGO_INICIAL)
+    orden_catalogo = {item["sku"]: idx for idx, item in enumerate(catalogo_actual)}
+
     datos_procesados = []
     for item in vencimientos_list:
         estado, dias = calcular_estado_vencimiento(item["Fecha Vencimiento"])
-        tamano_orden = obtener_orden_tamano(item["Descripción del Producto"])
+        # Obtener la posición del SKU en el catálogo para mantener la agrupación por secciones del PDF
+        pos_catalogo = orden_catalogo.get(item["SKU"], 999)
         datos_procesados.append({
             "SKU": item["SKU"],
             "Descripción del Producto": item["Descripción del Producto"],
@@ -556,10 +561,12 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
             "Cantidad": item.get("Cantidad", "-"),
             "Estado": estado,
             "Dias": dias,
-            "TamanoOrden": tamano_orden
+            "PosCat": pos_catalogo
         })
 
-    datos_ordenados = sorted(datos_procesados, key=lambda x: (x["Dias"], x["TamanoOrden"]))
+    # ORDENAMIENTO: Primero agrupa por la posición del producto en el catálogo (secciones del PDF), 
+    # y secundariamente por días (el lote más próximo a vencer de ese producto va primero).
+    datos_ordenados = sorted(datos_procesados, key=lambda x: (x["PosCat"], x["Dias"]))
 
     for row_idx, r_data in enumerate(datos_ordenados, start=5):
         ws.row_dimensions[row_idx].height = 20
