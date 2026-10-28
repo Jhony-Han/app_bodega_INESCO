@@ -614,7 +614,7 @@ with tab1:
         
         uploaded_backup = st.file_uploader("📤 Subir Respaldo Previo (.json)", type=["json"], key="uploader_backup")
         if uploaded_backup is not None:
-            if "last_uploaded_file" not in st.session_state || st.session_state.last_uploaded_file != uploaded_backup.name:
+            if "last_uploaded_file" not in st.session_state or st.session_state.last_uploaded_file != uploaded_backup.name:
                 try:
                     stringio = io.StringIO(uploaded_backup.getvalue().decode("utf-8"))
                     data_recuperada = json.load(stringio)
