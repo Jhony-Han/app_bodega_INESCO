@@ -684,6 +684,12 @@ with tab1:
                 # Si la nueva fecha ingresada es menor (más próxima a vencer)
                 if nueva_fecha_dt < fecha_actual_dt:
                     st.session_state.vencimientos[sku_existente_idx]["Fecha Vencimiento"] = nueva_fecha_str
+                    
+                    # 🔴 CLAVE: Limpiar la memoria del selector visual de Streamlit para que se refresque al instante
+                    key_date_input = f"date_row_{s_code}_{sku_existente_idx}"
+                    if key_date_input in st.session_state:
+                        del st.session_state[key_date_input]
+                        
                     st.toast(f"🔄 Se actualizó a la fecha más próxima ({nueva_fecha_str}) para {s_code}.", icon="✅")
                 else:
                     st.toast(f"ℹ️ Ya existe una fecha más próxima ({fecha_actual_str}) para este producto.", icon="ℹ️")
@@ -733,7 +739,7 @@ with tab1:
             col_a.write(f"**{row['SKU']}**")
             col_b.write(row['Descripción del Producto'])
 
-            # Tomar la fecha real directamente desde la sesión para forzar el cambio visual
+            # Tomar la fecha real directamente desde la sesión
             fecha_real_str = st.session_state.vencimientos[orig_idx]['Fecha Vencimiento']
             try:
                 fecha_default_row = datetime.strptime(fecha_real_str, "%d/%m/%Y").date()
