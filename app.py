@@ -684,12 +684,6 @@ with tab1:
                 # Si la nueva fecha ingresada es menor (más próxima a vencer)
                 if nueva_fecha_dt < fecha_actual_dt:
                     st.session_state.vencimientos[sku_existente_idx]["Fecha Vencimiento"] = nueva_fecha_str
-                    
-                    # 🔴 CLAVE: Limpiar la memoria del selector visual de Streamlit para que se refresque al instante
-                    key_date_input = f"date_row_{s_code}_{sku_existente_idx}"
-                    if key_date_input in st.session_state:
-                        del st.session_state[key_date_input]
-                        
                     st.toast(f"🔄 Se actualizó a la fecha más próxima ({nueva_fecha_str}) para {s_code}.", icon="✅")
                 else:
                     st.toast(f"ℹ️ Ya existe una fecha más próxima ({fecha_actual_str}) para este producto.", icon="ℹ️")
@@ -739,20 +733,9 @@ with tab1:
             col_a.write(f"**{row['SKU']}**")
             col_b.write(row['Descripción del Producto'])
 
-            # Tomar la fecha real directamente desde la sesión
+            # Mostrar la fecha como texto fijo actualizado directamente de la sesión
             fecha_real_str = st.session_state.vencimientos[orig_idx]['Fecha Vencimiento']
-            try:
-                fecha_default_row = datetime.strptime(fecha_real_str, "%d/%m/%Y").date()
-            except ValueError:
-                fecha_default_row = date.today()
-
-            key_date_input = f"date_row_{row['SKU']}_{orig_idx}"
-            nueva_f_date = col_c.date_input("Fecha", value=fecha_default_row, key=key_date_input)
-            nueva_f_texto = nueva_f_date.strftime("%d/%m/%Y")
-            
-            if nueva_f_texto != fecha_real_str:
-                st.session_state.vencimientos[orig_idx]['Fecha Vencimiento'] = nueva_f_texto
-                st.rerun()
+            col_c.write(f"📅 **{fecha_real_str}**")
             
             cant_mostrada = row.get('Cantidad', '-')
             col_d.write(f"📦 {cant_mostrada}")
