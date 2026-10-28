@@ -733,16 +733,18 @@ with tab1:
             col_a.write(f"**{row['SKU']}**")
             col_b.write(row['Descripción del Producto'])
 
+            # Tomar la fecha real directamente desde la sesión para forzar el cambio visual
+            fecha_real_str = st.session_state.vencimientos[orig_idx]['Fecha Vencimiento']
             try:
-                fecha_default_row = datetime.strptime(row['Fecha Vencimiento'], "%d/%m/%Y").date()
+                fecha_default_row = datetime.strptime(fecha_real_str, "%d/%m/%Y").date()
             except ValueError:
                 fecha_default_row = date.today()
 
-            # Usamos un identificador único en la key para forzar la actualización visual al cambiar de fecha
-            nueva_f_date = col_c.date_input("Fecha", value=fecha_default_row, key=f"date_row_{row['SKU']}_{orig_idx}")
+            key_date_input = f"date_row_{row['SKU']}_{orig_idx}"
+            nueva_f_date = col_c.date_input("Fecha", value=fecha_default_row, key=key_date_input)
             nueva_f_texto = nueva_f_date.strftime("%d/%m/%Y")
             
-            if nueva_f_texto != st.session_state.vencimientos[orig_idx]['Fecha Vencimiento']:
+            if nueva_f_texto != fecha_real_str:
                 st.session_state.vencimientos[orig_idx]['Fecha Vencimiento'] = nueva_f_texto
                 st.rerun()
             
