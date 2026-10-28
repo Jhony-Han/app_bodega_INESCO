@@ -366,7 +366,7 @@ def exportar_excel_multiruta(rutas_dict, fecha_str, es_reporte_rutas=False):
     return output.getvalue()
 
 # ---------------------------------------------------------
-# 4. FUNCIÓN CLAVE DE EXTRACCIÓN DE PDF DE RUTAS (RESTAURADA Y GARANTIZADA)
+# 4. FUNCIÓN CLAVE DE EXTRACCIÓN DE PDF DE RUTAS
 # ---------------------------------------------------------
 def procesar_pdf_rutas(pdf_file):
     routes_data = {}
@@ -443,32 +443,8 @@ def procesar_pdf_rutas(pdf_file):
     return routes_data
 
 # ---------------------------------------------------------
-# 5. FUNCIONES PARA VENCIMIENTOS (LIMPIO Y PROFESIONAL)
+# 5. FUNCIONES PARA VENCIMIENTOS (CON BORDES NEGROS Y AGRUPACIÓN POR SECCIONES)
 # ---------------------------------------------------------
-def obtener_orden_tamano(descripcion):
-    """Clasifica los productos por tamaños basándose en las presentaciones de FEMSA."""
-    desc = descripcion.upper()
-    if "8 OZ" in desc or "10 OZ" in desc or "10ONZ" in desc:
-        return 1  # Vidrios pequeños / 8 oz / 10 oz
-    elif "350ML" in desc or "350 ML" in desc:
-        return 2  # Vidrios de 350 ml
-    elif "250ML" in desc or "250 ML" in desc or "MINI PET" in desc:
-        return 3  # Formatos de 250 ml
-    elif "400ML" in desc or "400 ML" in desc or "400PET" in desc:
-        return 4  # Presentaciones de 400 ml
-    elif "600ML" in desc or "600 ML" in desc or "500ML" in desc or "500 ML" in desc or "625ML" in desc:
-        return 5  # Presentaciones de 500/600 ml
-    elif "LAT" in desc or "269ML" in desc or "330ML" in desc or "473ML" in desc:
-        return 6  # Latas y Monster
-    elif "1 LT" in desc or "1L" in desc or "1 LITRO" in desc or "1.5" in desc or "1,5" in desc or "1.2" in desc or "946ML" in desc:
-        return 7  # Medianos / 1L / 1.5L
-    elif "2.5" in desc or "2,5" in desc or "3 LT" in desc or "3L" in desc or "3 LITROS" in desc or "COMBO" in desc or "2 PK" in desc or "3 PACK" in desc:
-        return 8  # Familiares / 3 Litros / Combos
-    elif "188ML" in desc or "280ML" in desc or "280 ML" in desc or "ECOFLEX" in desc:
-        return 9  # Formatos pequeños / Trp
-    else:
-        return 10 # Snacks, golosinas y kits
-
 def calcular_estado_vencimiento(fecha_venc_str):
     """Calcula días restantes y define el estado de alerta."""
     try:
@@ -487,7 +463,7 @@ def calcular_estado_vencimiento(fecha_venc_str):
         return "⚪ DESCONOCIDO", 9999
 
 def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
-    """Exporta el reporte agrupado por secciones de productos (según el orden del catálogo/PDF) y ordenado por urgencia por lote."""
+    """Exporta reporte profesional agrupado por secciones del catálogo y con bordes negros marcados."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Vencimientos"
@@ -497,9 +473,10 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
     header_fill = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid")
     header_font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
     
-    thin_border = Border(
-        left=Side(style='thin', color='D9D9D9'), right=Side(style='thin', color='D9D9D9'),
-        top=Side(style='thin', color='D9D9D9'), bottom=Side(style='thin', color='D9D9D9')
+    # Bordes con contorno negro más elegante y marcado
+    black_border = Border(
+        left=Side(style='thin', color='000000'), right=Side(style='thin', color='000000'),
+        top=Side(style='thin', color='000000'), bottom=Side(style='thin', color='000000')
     )
     
     white_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
@@ -519,17 +496,17 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
     cell_t.fill = title_fill
     cell_t.alignment = Alignment(horizontal="center", vertical="center")
     for col in range(1, 7):
-        ws.cell(row=1, column=col).border = thin_border
+        ws.cell(row=1, column=col).border = black_border
         ws.cell(row=1, column=col).fill = title_fill
 
     sub_fill = PatternFill(start_color="ED7D31", end_color="ED7D31", fill_type="solid")
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=6)
-    cell_s = ws.cell(row=2, column=1, value=f"📌 Reporte Agrupado por Secciones de Productos y FIFO por Lote (Fecha: {fecha_str})")
+    cell_s = ws.cell(row=2, column=1, value=f"📌 Reporte Agrupado por Secciones del Catálogo (Fecha: {fecha_str})")
     cell_s.font = Font(color="FFFFFF", bold=True, size=11, name="Calibri")
     cell_s.fill = sub_fill
     cell_s.alignment = Alignment(horizontal="center", vertical="center")
     for col in range(1, 7):
-        ws.cell(row=2, column=col).border = thin_border
+        ws.cell(row=2, column=col).border = black_border
         ws.cell(row=2, column=col).fill = sub_fill
 
     ws.row_dimensions[1].height = 28
@@ -542,17 +519,15 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
         c = ws.cell(row=4, column=col_idx, value=h_name)
         c.fill = header_fill
         c.font = header_font
-        c.border = thin_border
+        c.border = black_border
         c.alignment = Alignment(horizontal="center", vertical="center")
 
-    # Mapear el orden exacto de los productos según el catálogo de la app (que sigue el orden del PDF)
     catalogo_actual = st.session_state.get("catalogo", CATALOGO_INICIAL)
     orden_catalogo = {item["sku"]: idx for idx, item in enumerate(catalogo_actual)}
 
     datos_procesados = []
     for item in vencimientos_list:
         estado, dias = calcular_estado_vencimiento(item["Fecha Vencimiento"])
-        # Obtener la posición del SKU en el catálogo para mantener la agrupación por secciones del PDF
         pos_catalogo = orden_catalogo.get(item["SKU"], 999)
         datos_procesados.append({
             "SKU": item["SKU"],
@@ -564,9 +539,8 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
             "PosCat": pos_catalogo
         })
 
-    # ORDENAMIENTO: Primero agrupa por la posición del producto en el catálogo (secciones del PDF), 
-    # y secundariamente por días (el lote más próximo a vencer de ese producto va primero).
-    datos_ordenados = sorted(datos_procesados, key=lambda x: (x["PosCat"], x["Dias"]))
+    # Ordenar por sección del catálogo para que aparezcan agrupados (8oz, 350ml, etc.)
+    datos_ordenados = sorted(datos_procesados, key=lambda x: x["PosCat"])
 
     for row_idx, r_data in enumerate(datos_ordenados, start=5):
         ws.row_dimensions[row_idx].height = 20
@@ -589,7 +563,7 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
 
         for col_idx, val in enumerate(vals, start=1):
             c = ws.cell(row=row_idx, column=col_idx, value=val)
-            c.border = thin_border
+            c.border = black_border  # Contorno negro aplicado a cada celda
             
             if col_idx in [1, 2, 3, 4]:
                 c.fill = white_fill
@@ -621,9 +595,9 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
 # ---------------------------------------------------------
 tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF (Rutas)"])
 
-# --- TAB 1: FECHAS DE VENCIMIENTO ---
+# --- TAB 1: FECHAS DE VENCIMIENTO (FECHA ÚNICA MÁS PRÓXIMA POR SKU) ---
 with tab1:
-    st.markdown('<p class="sub-title">➕ Agregar Lote y Fecha de Vencimiento</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">➕ Agregar o Actualizar Fecha de Vencimiento (Fecha Más Próxima)</p>', unsafe_allow_html=True)
     
     with st.expander("📂 Opciones de Respaldo y Sincronización (JSON)"):
         datos_respaldo = {
@@ -640,7 +614,7 @@ with tab1:
         
         uploaded_backup = st.file_uploader("📤 Subir Respaldo Previo (.json)", type=["json"], key="uploader_backup")
         if uploaded_backup is not None:
-            if "last_uploaded_file" not in st.session_state or st.session_state.last_uploaded_file != uploaded_backup.name:
+            if "last_uploaded_file" not in st.session_state || st.session_state.last_uploaded_file != uploaded_backup.name:
                 try:
                     stringio = io.StringIO(uploaded_backup.getvalue().decode("utf-8"))
                     data_recuperada = json.load(stringio)
@@ -678,60 +652,71 @@ with tab1:
     with c3:
         fecha_seleccionada = st.date_input("Fecha Vencimiento:", value=date.today(), key="input_calendar_venc")
         
-    if st.button("💾 Guardar Lote de Vencimiento", key="btn_save_venc"):
+    if st.button("💾 Guardar Fecha de Vencimiento", key="btn_save_venc"):
         if sel_sku:
             s_code, s_desc = sel_sku.split(" - ", 1)
-            fecha_formateada = fecha_seleccionada.strftime("%d/%m/%Y")
+            nueva_fecha_dt = fecha_seleccionada
+            nueva_fecha_str = nueva_fecha_dt.strftime("%d/%m/%Y")
+            cant_final = cantidad_input.strip() if cantidad_input.strip().isdigit() else "-"
             
-            # Validar si el usuario escribió una cantidad real o lo dejó vacío
-            cant_ingresada = cantidad_input.strip()
-            cant_final = int(cant_ingresada) if cant_ingresada.isdigit() else "-"
-            
-            # Verificar si ya existe un registro con el MISMO SKU y la MISMA Fecha de Vencimiento
-            lote_existente_idx = next(
-                (i for i, r in enumerate(st.session_state.vencimientos) 
-                 if r["SKU"] == s_code and r["Fecha Vencimiento"] == fecha_formateada), 
+            # Verificar si el SKU ya existe en la lista de vencimientos
+            sku_existente_idx = next(
+                (i for i, r in enumerate(st.session_state.vencimientos) if r["SKU"] == s_code), 
                 None
             )
             
-            if lote_existente_idx is not None:
-                # Si ya existe el producto y la misma fecha, actualizamos la cantidad solo si el usuario puso un número nuevo; 
-                # de lo contrario, se queda con el guion o valor que tenía para evitar sumas extrañas.
-                if cant_final != "-":
-                    st.session_state.vencimientos[lote_existente_idx]["Cantidad"] = cant_final
+            if sku_existente_idx is not None:
+                # Ya existe el producto: comparamos fechas para conservar LA MÁS PRÓXIMA A VENCER
+                fecha_actual_str = st.session_state.vencimientos[sku_existente_idx]["Fecha Vencimiento"]
+                try:
+                    fecha_actual_dt = datetime.strptime(fecha_actual_str, "%d/%m/%Y").date()
+                except:
+                    fecha_actual_dt = nueva_fecha_dt
                 
-                st.toast(f"🔄 El lote para {s_code} con fecha {fecha_formateada} ya existía.", icon="✅")
+                # Si la nueva fecha es más antigua (más próxima a vencer) que la guardada, la reemplazamos
+                if nueva_fecha_dt < fecha_actual_dt:
+                    st.session_state.vencimientos[sku_existente_idx]["Fecha Vencimiento"] = nueva_fecha_str
+                    st.toast(f"🔄 Se actualizó a la fecha más próxima ({nueva_fecha_str}) para el SKU {s_code}.", icon="✅")
+                else:
+                    st.toast(f"ℹ️ Ya existe una fecha más próxima ({fecha_actual_str}) para este producto. Se conserva esa.", icon="ℹ️")
+                
+                # Actualizar cantidad si ingresó una nueva
+                if cant_final != "-":
+                    st.session_state.vencimientos[sku_existente_idx]["Cantidad"] = cant_final
             else:
-                # Si es una fecha nueva para ese SKU, se crea el lote independiente
-                nuevo_lote = {
-                    "id_lote": f"{s_code}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
+                # Si el producto no estaba registrado, se crea el registro nuevo
+                nuevo_registro = {
                     "SKU": s_code,
                     "Descripción del Producto": s_desc,
                     "Cantidad": cant_final,
-                    "Fecha Vencimiento": fecha_formateada
+                    "Fecha Vencimiento": nueva_fecha_str
                 }
-                st.session_state.vencimientos.append(nuevo_lote)
-                st.toast(f"¡Lote guardado ({s_code} - {fecha_formateada})!", icon="✅")
+                st.session_state.vencimientos.append(nuevo_registro)
+                st.toast(f"¡Guardado correctamente ({s_code} - {nueva_fecha_str})!", icon="✅")
             
             st.rerun()
         else:
             st.warning("⚠️ Debes seleccionar un SKU primero.")
 
-    st.markdown('<p class="sub-title">📋 Lotes Registrados en Bodega</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">📋 Productos Registrados en Bodega (Fecha Única más Próxima)</p>', unsafe_allow_html=True)
     
     if st.session_state.vencimientos:
+        catalogo_actual = st.session_state.get("catalogo", CATALOGO_INICIAL)
+        orden_catalogo = {item["sku"]: idx for idx, item in enumerate(catalogo_actual)}
+
         lotes_con_orden = []
         for idx, item in enumerate(st.session_state.vencimientos):
             estado, dias = calcular_estado_vencimiento(item["Fecha Vencimiento"])
-            tamano_orden = obtener_orden_tamano(item["Descripción del Producto"])
+            pos_cat = orden_catalogo.get(item["SKU"], 999)
             lote_data = item.copy()
             lote_data["_idx_original"] = idx
             lote_data["_dias"] = dias
             lote_data["_estado"] = estado
-            lote_data["_tamano"] = tamano_orden
+            lote_data["_pos"] = pos_cat
             lotes_con_orden.append(lote_data)
 
-        lotes_ordenados = sorted(lotes_con_orden, key=lambda x: (x["_dias"], x["_tamano"]))
+        # Ordenar en pantalla según la sección del catálogo
+        lotes_ordenados = sorted(lotes_con_orden, key=lambda x: x["_pos"])
 
         to_delete = None
         for row in lotes_ordenados:
@@ -778,14 +763,14 @@ with tab1:
         col_dl1, col_dl2 = st.columns([1, 1])
         with col_dl1:
             st.download_button(
-                label="📥 Descargar Reporte Organizado (.xlsx)",
+                label="📥 Descargar Reporte Agrupado (.xlsx)",
                 data=excel_bytes,
-                file_name=f"Vencimientos_Inesco_Lotes_{date.today()}.xlsx",
+                file_name=f"Vencimientos_Inesco_Agrupado_{date.today()}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="dl_venc_excel_org"
             )
         with col_dl2:
-            texto_wa = urllib.parse.quote(f"Hola, comparto el reporte de control de lotes y vencimientos de Distribuciones Inesco del {date.today().strftime('%d/%m/%Y')}.")
+            texto_wa = urllib.parse.quote(f"Hola, comparto el reporte de control de vencimientos agrupado de Distribuciones Inesco del {date.today().strftime('%d/%m/%Y')}.")
             st.markdown(f"""
                 <a href="https://api.whatsapp.com/send?text={texto_wa}" target="_blank" style="text-decoration: none;">
                     <div style="background-color: #25D366; color: white; padding: 10px 15px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 0.95rem;">
@@ -823,7 +808,7 @@ with tab2:
             st.session_state.catalogo.pop(idx)
             st.rerun()
 
-# --- TAB 3: EXTRACCIÓN PDF (RUTAS) (AQUÍ ESTÁ LA FUNCIÓN RESTAURADA) ---
+# --- TAB 3: EXTRACCIÓN PDF (RUTAS) ---
 with tab3:
     st.markdown('<p class="sub-title">📄 Extracción Total de Rutas y Cargues de FEMSA</p>', unsafe_allow_html=True)
     st.info("ℹ️ Sube tu PDF de cargue para extraer la información por rutas")
