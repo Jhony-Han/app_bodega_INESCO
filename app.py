@@ -681,14 +681,14 @@ with tab1:
                 except:
                     fecha_actual_dt = nueva_fecha_dt
                 
-                # Si la nueva fecha ingresada es más próxima (menor) que la que ya estaba guardada
+                # Si la nueva fecha ingresada es más próxima (menor) que la guardada
                 if nueva_fecha_dt < fecha_actual_dt:
                     st.session_state.vencimientos[sku_existente_idx]["Fecha Vencimiento"] = nueva_fecha_str
                     st.toast(f"🔄 Se actualizó a la fecha más próxima ({nueva_fecha_str}) para {s_code}.", icon="✅")
                 else:
                     st.toast(f"ℹ️ Ya existe una fecha más próxima ({fecha_actual_str}) para este producto. Se conserva esa.", icon="ℹ️")
                 
-                # Actualizar cantidad solo si el usuario ingresó un valor válido nuevo
+                # Actualizar cantidad si ingresó un valor nuevo válido
                 if cant_final != "-":
                     st.session_state.vencimientos[sku_existente_idx]["Cantidad"] = cant_final
             else:
@@ -705,6 +705,87 @@ with tab1:
             st.rerun()
         else:
             st.warning("⚠️ Debes seleccionar un SKU primero.")
+
+    st.markdown('<p class="sub-title">📋 Productos Registrados en Bodega (Fecha Única más Próxima)</p>', unsafe_allow_html=True)
+    
+    if st.session_state.vencimientos:
+        catalogo_actual = st.session_state.get("catalogo", CATALOGO_INICIAL)
+        orden_catalogo = {item["sku"]: idx for idx, item in enumerate(catalogo_actual)}
+
+        lotes_con_orden = []
+        for idx, item in enumerate(st.session_state.vencimientos):
+            estado, dias = calcular_estado_vencimiento(item["Fecha Vencimiento"])
+            pos_cat = orden_catalogo.get(item["SKU"], 999)
+            lote_data = item.copy()
+            lote_data["_idx_original"] = idx
+            lote_data["_dias"] = dias
+            lote_data["_estado"] = estado
+            lote_data["_pos"] = pos_cat
+            lotes_con_orden.append(lote_data)
+
+        # Ordenar en pantalla según la sección del catálogo
+        lotes_ordenados = sorted(lotes_con_orden, key=lambda x: x["_pos"])
+
+        to_delete = None
+        for row in lotes_ordenados:
+            orig_idx = row["_idx_original"]
+            dias_rest = row["_dias"]
+            estado_txt = row["_estado"]
+            
+            col_a, col_b, col_c, col_d, col_e, col_f = st.columns([1.5, 3.0, 2.2, 1.2, 2.2, 1.2])
+            col_a.write(f"**{row['SKU']}**")
+            col_b.write(row['Descripción del Producto'])
+
+            try:
+                fecha_default_row = datetime.strptime(row['Fecha Vencimiento'], "%d/%m/%Y").date()
+            except ValueError:
+                fecha_default_row = date.today()
+
+            nueva_f_date = col_c.date_input("Fecha", value=fecha_default_row, key=f"date_lote_{orig_idx}")
+            nueva_f_texto = nueva_f_date.strftime("%d/%m/%Y")
+            
+            if nueva_f_texto != st.session_state.vencimientos[orig_idx]['Fecha Vencimiento']:
+                st.session_state.vencimientos[orig_idx]['Fecha Vencimiento'] = nueva_f_texto
+                st.rerun()
+            
+            cant_mostrada = row.get('Cantidad', '-')
+            col_d.write(f"📦 {cant_mostrada}")
+            
+            if dias_rest <= 30:
+                col_e.error(f"{estado_txt} ({dias_rest}d)")
+            elif dias_rest <= 60:
+                col_e.warning(f"{estado_txt} ({dias_rest}d)")
+            else:
+                col_e.success(f"{estado_txt} ({dias_rest}d)")
+            
+            if col_f.button("❌ Borrar", key=f"del_lote_{orig_idx}"):
+                to_delete = orig_idx
+
+        if to_delete is not None:
+            st.session_state.vencimientos.pop(to_delete)
+            st.rerun()
+
+        st.divider()
+        excel_bytes = exportar_excel_vencimientos_organizado(st.session_state.vencimientos, fecha_str=date.today().strftime('%d/%m/%Y'))
+        
+        col_dl1, col_dl2 = st.columns([1, 1])
+        with col_dl1:
+            st.download_button(
+                label="📥 Descargar Reporte Agrupado (.xlsx)",
+                data=excel_bytes,
+                file_name=f"Vencimientos_Inesco_Agrupado_{date.today()}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_venc_excel_org"
+            )
+        with col_dl2:
+            texto_wa = urllib.parse.quote(f"Hola, comparto el reporte de control de vencimientos agrupado de Distribuciones Inesco del {date.today().strftime('%d/%m/%Y')}.")
+            st.markdown(f"""
+                <a href="https://api.whatsapp.com/send?text={texto_wa}" target="_blank" style="text-decoration: none;">
+                    <div style="background-color: #25D366; color: white; padding: 10px 15px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 0.95rem;">
+                        💬 Abrir WhatsApp con Aviso
+                    </div>
+                </a>
+            """, unsafe_allow_html=True)
 
 # --- TAB 2: ADMINISTRAR SKUS ---
 with tab2:
