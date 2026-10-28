@@ -596,6 +596,7 @@ def exportar_excel_vencimientos_organizado(vencimientos_list, fecha_str):
 tab1, tab2, tab3 = st.tabs(["📅 Fechas de Vencimiento", "📦 Administrar SKUs", "📄 Extracción PDF (Rutas)"])
 
 # --- TAB 1: FECHAS DE VENCIMIENTO ---
+# --- TAB 1: FECHAS DE VENCIMIENTO ---
 with tab1:
     st.markdown('<p class="sub-title">➕ Agregar o Actualizar Fecha de Vencimiento (Fecha Más Próxima)</p>', unsafe_allow_html=True)
     
@@ -628,12 +629,12 @@ with tab1:
                 except Exception as e:
                     st.error(f"⚠️ Error al leer el respaldo: {e}")
         
-        # Botón para limpiar todo al instante sin recargar manualmente la página
+        # Botón de limpieza total funcional
         if st.button("🗑️ Limpiar Todos los Vencimientos Registrados", key="btn_limpiar_todo"):
             st.session_state.vencimientos = []
             if "last_uploaded_file" in st.session_state:
                 del st.session_state.last_uploaded_file
-            st.success("🧹 ¡Se han borrado todos los registros de la bodega!")
+            st.toast("🧹 ¡Se han borrado todos los registros!", icon="✅")
             st.rerun()
 
     st.session_state.modo_captura = st.selectbox(
@@ -667,32 +668,29 @@ with tab1:
             nueva_fecha_str = nueva_fecha_dt.strftime("%d/%m/%Y")
             cant_final = cantidad_input.strip() if cantidad_input.strip().isdigit() else "-"
             
-            # Buscar si el SKU ya existe registrado
+            # Buscar si el SKU ya existe registrado en la sesión
             sku_existente_idx = next(
                 (i for i, r in enumerate(st.session_state.vencimientos) if r["SKU"] == s_code), 
                 None
             )
             
             if sku_existente_idx is not None:
-                # Obtener la fecha que ya estaba guardada
                 fecha_actual_str = st.session_state.vencimientos[sku_existente_idx]["Fecha Vencimiento"]
                 try:
                     fecha_actual_dt = datetime.strptime(fecha_actual_str, "%d/%m/%Y").date()
                 except:
                     fecha_actual_dt = nueva_fecha_dt
                 
-                # Si la nueva fecha ingresada es más próxima (menor) que la guardada
+                # Si la nueva fecha ingresada es menor (más próxima a vencer)
                 if nueva_fecha_dt < fecha_actual_dt:
                     st.session_state.vencimientos[sku_existente_idx]["Fecha Vencimiento"] = nueva_fecha_str
                     st.toast(f"🔄 Se actualizó a la fecha más próxima ({nueva_fecha_str}) para {s_code}.", icon="✅")
                 else:
-                    st.toast(f"ℹ️ Ya existe una fecha más próxima ({fecha_actual_str}) para este producto. Se conserva esa.", icon="ℹ️")
+                    st.toast(f"ℹ️ Ya existe una fecha más próxima ({fecha_actual_str}) para este producto.", icon="ℹ️")
                 
-                # Actualizar cantidad si ingresó un valor nuevo válido
                 if cant_final != "-":
                     st.session_state.vencimientos[sku_existente_idx]["Cantidad"] = cant_final
             else:
-                # Si el producto no estaba registrado, se crea el registro nuevo
                 nuevo_registro = {
                     "SKU": s_code,
                     "Descripción del Producto": s_desc,
@@ -723,7 +721,6 @@ with tab1:
             lote_data["_pos"] = pos_cat
             lotes_con_orden.append(lote_data)
 
-        # Ordenar en pantalla según la sección del catálogo
         lotes_ordenados = sorted(lotes_con_orden, key=lambda x: x["_pos"])
 
         to_delete = None
@@ -741,7 +738,8 @@ with tab1:
             except ValueError:
                 fecha_default_row = date.today()
 
-            nueva_f_date = col_c.date_input("Fecha", value=fecha_default_row, key=f"date_lote_{orig_idx}")
+            # Usamos un identificador único en la key para forzar la actualización visual al cambiar de fecha
+            nueva_f_date = col_c.date_input("Fecha", value=fecha_default_row, key=f"date_row_{row['SKU']}_{orig_idx}")
             nueva_f_texto = nueva_f_date.strftime("%d/%m/%Y")
             
             if nueva_f_texto != st.session_state.vencimientos[orig_idx]['Fecha Vencimiento']:
