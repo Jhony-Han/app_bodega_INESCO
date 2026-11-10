@@ -92,7 +92,6 @@ CATALOGO_INICIAL = [
    # ---------------------------------------------------------
 # CATÁLOGO MAESTRO DEFINITIVO (ACTUALIZADO - NOV 2026)
 # ---------------------------------------------------------
-CATALOGO_INICIAL = [
     {"sku": "120180", "descripcion": "MONSTER VIOLET 473ML LAT(12) MQ"},
     {"sku": "120208", "descripcion": "POWERADE CONTRATAQUE 500ML PET(6)"},
     {"sku": "136665", "descripcion": "6PK CCSO 269ML LAT NVO"},
@@ -265,7 +264,7 @@ CATALOGO_INICIAL = [
     {"sku": "160190", "descripcion": "COCA-COLA 10OZ (12)"},
     {"sku": "160191", "descripcion": "COCA COLA ZERO 10OZ (12)"}
 ]
-]
+
 
 if "catalogo" not in st.session_state:
     st.session_state.catalogo = CATALOGO_INICIAL
